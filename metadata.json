@@ -1,6 +1,6 @@
 {
   "name": "AcademiaTrack",
-  "description": "Comprehensive academic companion to track courses, assignments, timetables, grades, CGPA, attendance, exam countdowns, and study planning.",
+  "description": "Secondary School Management & CBT Portal with dedicated Admin, Teacher, Student, and Parent corners, live CBT exams, automated continuous assessment, PDF report cards, targeted announcements, and moderated chat rooms.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
