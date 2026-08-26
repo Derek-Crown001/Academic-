@@ -1,0 +1,6 @@
+{
+  "name": "AcademiaTrack",
+  "description": "Comprehensive academic companion to track courses, assignments, timetables, grades, CGPA, attendance, exam countdowns, and study planning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
