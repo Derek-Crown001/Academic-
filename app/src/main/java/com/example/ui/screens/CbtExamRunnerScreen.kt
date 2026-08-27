@@ -24,6 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CbtQuestion
+import com.example.ui.components.CbtAutoSubmitNoticeBanner
+import com.example.ui.components.CbtCountdownTimer
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.CbtRunnerState
 import com.example.ui.viewmodel.SchoolViewModel
@@ -37,6 +39,13 @@ fun CbtExamRunnerScreen(
 ) {
     val runnerState by viewModel.cbtRunnerState.collectAsState()
     var showSubmitDialog by remember { mutableStateOf(false) }
+
+    // If time has expired or is submitting, auto-dismiss any manual submit dialog
+    LaunchedEffect(runnerState.remainingSeconds, runnerState.isSubmitting) {
+        if (runnerState.remainingSeconds <= 0 || runnerState.isSubmitting) {
+            showSubmitDialog = false
+        }
+    }
 
     if (runnerState.isSubmitted && runnerState.submissionResult != null) {
         // Result Screen
@@ -56,14 +65,6 @@ fun CbtExamRunnerScreen(
     val selectedOption = runnerState.selectedAnswers[currentQuestion.id]
     val isFlagged = runnerState.flaggedQuestionIds.contains(currentQuestion.id)
 
-    val minutes = runnerState.remainingSeconds / 60
-    val seconds = runnerState.remainingSeconds % 60
-    val timerColor = when {
-        runnerState.remainingSeconds <= 120 -> AcademicRose
-        runnerState.remainingSeconds <= 300 -> AcademicAmber
-        else -> PrimaryLight
-    }
-
     Scaffold(
         topBar = {
             Surface(
@@ -77,7 +78,7 @@ fun CbtExamRunnerScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(
                                 text = exam.title,
                                 style = MaterialTheme.typography.titleSmall,
@@ -91,31 +92,12 @@ fun CbtExamRunnerScreen(
                             )
                         }
 
-                        // Live Countdown Timer
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = timerColor.copy(alpha = 0.12f),
-                            border = androidx.compose.foundation.BorderStroke(1.5.dp, timerColor)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Timer,
-                                    contentDescription = null,
-                                    tint = timerColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = String.format(Locale.US, "%02d:%02d", minutes, seconds),
-                                    color = timerColor,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 15.sp
-                                )
-                            }
-                        }
+                        // Dedicated Live Countdown Timer Component
+                        CbtCountdownTimer(
+                            remainingSeconds = runnerState.remainingSeconds,
+                            totalDurationSeconds = if (runnerState.totalDurationSeconds > 0) runnerState.totalDurationSeconds else exam.durationMinutes * 60,
+                            compact = true
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -255,6 +237,11 @@ fun CbtExamRunnerScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Auto-Submit Notice Banner during critical countdown
+            item {
+                CbtAutoSubmitNoticeBanner(remainingSeconds = runnerState.remainingSeconds)
+            }
+
             // Question Header
             item {
                 Row(
@@ -366,7 +353,49 @@ fun CbtExamRunnerScreen(
         }
     }
 
-    if (showSubmitDialog) {
+    // Auto-Submitting Progress Overlay Dialog
+    if (runnerState.isSubmitting || (runnerState.remainingSeconds <= 0 && runnerState.isRunning)) {
+        AlertDialog(
+            onDismissRequest = { /* Cannot dismiss during auto-submission */ },
+            icon = {
+                CircularProgressIndicator(
+                    color = AcademicRose,
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "⏰ Time Expired!",
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Your assessment time has concluded. Auto-submitting and grading your answers now...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "Please hold on while your official score is registered.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    // Manual Submit Confirmation Dialog
+    if (showSubmitDialog && !runnerState.isSubmitting && runnerState.remainingSeconds > 0) {
         val totalQ = questions.size
         val answeredQ = runnerState.selectedAnswers.size
         val unansweredQ = totalQ - answeredQ
@@ -420,7 +449,7 @@ fun CbtExamRunnerScreen(
                 Button(
                     onClick = {
                         showSubmitDialog = false
-                        viewModel.submitCbtExam()
+                        viewModel.submitCbtExam(isAutoSubmit = false)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = AcademicEmerald),
                     modifier = Modifier.testTag("confirm_submit_cbt_button")
@@ -484,6 +513,34 @@ fun CbtResultReviewScreen(
                         fontWeight = FontWeight.ExtraBold,
                         color = if (submission.isPassed) Color(0xFF166534) else Color(0xFF991B1B)
                     )
+
+                    // Submission Mode Badge (Auto-Submit vs Manual)
+                    if (runnerState.isAutoSubmitted) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = AcademicRose.copy(alpha = 0.15f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, AcademicRose.copy(alpha = 0.4f))
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Alarm,
+                                    contentDescription = null,
+                                    tint = AcademicRose,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "Auto-Submitted on Time Expiry",
+                                    color = AcademicRose,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
 
                     Text(
                         text = submission.examTitle,
@@ -641,3 +698,4 @@ fun CbtResultReviewScreen(
         }
     }
 }
+

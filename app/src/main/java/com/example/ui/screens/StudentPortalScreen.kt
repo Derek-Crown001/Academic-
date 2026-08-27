@@ -61,8 +61,9 @@ fun StudentPortalScreen(
                 PortalTab.STUDENT_CBT -> 0
                 PortalTab.STUDENT_ASSIGNMENTS -> 1
                 PortalTab.STUDENT_REPORT_CARD -> 2
-                PortalTab.STUDENT_ANNOUNCEMENTS -> 3
-                PortalTab.STUDENT_CLASS_CHAT -> 4
+                PortalTab.STUDENT_AI_TUTOR -> 3
+                PortalTab.STUDENT_ANNOUNCEMENTS -> 4
+                PortalTab.STUDENT_CLASS_CHAT -> 5
                 else -> 0
             },
             edgePadding = 16.dp,
@@ -86,6 +87,12 @@ fun StudentPortalScreen(
                 onClick = { viewModel.selectTab(PortalTab.STUDENT_REPORT_CARD) },
                 text = { Text("Report Sheet", fontWeight = FontWeight.SemiBold) },
                 icon = { Icon(Icons.Rounded.Assessment, contentDescription = null) }
+            )
+            Tab(
+                selected = currentTab == PortalTab.STUDENT_AI_TUTOR,
+                onClick = { viewModel.selectTab(PortalTab.STUDENT_AI_TUTOR) },
+                text = { Text("AI Tutor", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null) }
             )
             Tab(
                 selected = currentTab == PortalTab.STUDENT_ANNOUNCEMENTS,
@@ -124,6 +131,13 @@ fun StudentPortalScreen(
                     reportCard = studentReportCard,
                     grades = studentGrades,
                     onExportPdf = { rc -> viewModel.exportReportCardPdf(context, rc) }
+                )
+            }
+            PortalTab.STUDENT_AI_TUTOR -> {
+                RoleAiAssistantScreen(
+                    viewModel = viewModel,
+                    currentUser = currentUser,
+                    currentRole = SchoolRole.STUDENT
                 )
             }
             PortalTab.STUDENT_ANNOUNCEMENTS -> {

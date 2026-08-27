@@ -26,6 +26,15 @@ interface SchoolDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUsers(users: List<SchoolUser>)
 
+    @Update
+    suspend fun updateUser(user: SchoolUser)
+
+    @Delete
+    suspend fun deleteUser(user: SchoolUser)
+
+    @Query("DELETE FROM school_users WHERE id = :id")
+    suspend fun deleteUserById(id: String)
+
     // --- Classes ---
     @Query("SELECT * FROM school_classes ORDER BY level ASC, arm ASC")
     fun getAllClasses(): Flow<List<SchoolClass>>
@@ -35,6 +44,15 @@ interface SchoolDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertClasses(classes: List<SchoolClass>)
+
+    @Update
+    suspend fun updateClass(schoolClass: SchoolClass)
+
+    @Delete
+    suspend fun deleteClass(schoolClass: SchoolClass)
+
+    @Query("DELETE FROM school_classes WHERE id = :id")
+    suspend fun deleteClassById(id: Long)
 
     // --- Subjects ---
     @Query("SELECT * FROM school_subjects ORDER BY name ASC")
@@ -51,6 +69,9 @@ interface SchoolDao {
 
     @Update
     suspend fun updateSubject(subject: SchoolSubject)
+
+    @Delete
+    suspend fun deleteSubject(subject: SchoolSubject)
 
     // --- CBT Exams & Questions ---
     @Query("SELECT * FROM cbt_exams ORDER BY createdDateMillis DESC")
@@ -174,6 +195,57 @@ interface SchoolDao {
     @Query("UPDATE report_cards SET isApprovedByAdmin = :isApproved, approvedAtMillis = :timestamp WHERE id = :reportCardId")
     suspend fun setReportCardApproval(reportCardId: Long, isApproved: Boolean, timestamp: Long)
 
+    @Query("UPDATE report_cards SET isPublishedByTeacher = :isPublished, teacherPublishedAtMillis = :timestamp WHERE id = :reportCardId")
+    suspend fun setTeacherPublished(reportCardId: Long, isPublished: Boolean, timestamp: Long)
+
+    @Query("SELECT * FROM report_cards WHERE studentId = :studentId AND isApprovedByAdmin = 1 LIMIT 1")
+    fun getApprovedReportCardForStudent(studentId: String): Flow<ReportCard?>
+
+    @Query("SELECT * FROM student_grades WHERE studentId = :studentId AND subjectName = :subjectName LIMIT 1")
+    suspend fun getGradeDirect(studentId: String, subjectName: String): StudentGrade?
+
+    // --- School Profile ---
+    @Query("SELECT * FROM school_profile WHERE id = 1 LIMIT 1")
+    fun getSchoolProfile(): Flow<SchoolProfile?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSchoolProfile(profile: SchoolProfile)
+
+    @Update
+    suspend fun updateSchoolProfile(profile: SchoolProfile)
+
+    // --- Teacher Attendance & Clock In/Out ---
+    @Query("SELECT * FROM teacher_attendance ORDER BY clockInTimeMillis DESC")
+    fun getAllTeacherAttendance(): Flow<List<TeacherAttendance>>
+
+    @Query("SELECT * FROM teacher_attendance WHERE dateString = :dateString ORDER BY clockInTimeMillis DESC")
+    fun getAttendanceForDate(dateString: String): Flow<List<TeacherAttendance>>
+
+    @Query("SELECT * FROM teacher_attendance WHERE teacherId = :teacherId AND dateString = :dateString LIMIT 1")
+    fun getTodayAttendanceForTeacher(teacherId: String, dateString: String): Flow<TeacherAttendance?>
+
+    @Query("SELECT * FROM teacher_attendance WHERE teacherId = :teacherId AND dateString = :dateString LIMIT 1")
+    suspend fun getTodayAttendanceForTeacherDirect(teacherId: String, dateString: String): TeacherAttendance?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTeacherAttendance(attendance: TeacherAttendance): Long
+
+    @Update
+    suspend fun updateTeacherAttendance(attendance: TeacherAttendance)
+
+    // --- Student Daily Attendance / Register ---
+    @Query("SELECT * FROM student_attendance WHERE className = :className AND dateString = :dateString")
+    fun getStudentAttendanceForClassAndDate(className: String, dateString: String): Flow<List<StudentAttendanceRecord>>
+
+    @Query("SELECT * FROM student_attendance WHERE studentId = :studentId")
+    fun getAttendanceForStudent(studentId: String): Flow<List<StudentAttendanceRecord>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertStudentAttendance(record: StudentAttendanceRecord): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertStudentAttendanceList(records: List<StudentAttendanceRecord>)
+
     // --- Announcements ---
     @Query("SELECT * FROM school_announcements ORDER BY postedAtMillis DESC")
     fun getAllAnnouncements(): Flow<List<SchoolAnnouncement>>
@@ -187,6 +259,34 @@ interface SchoolDao {
     @Delete
     suspend fun deleteAnnouncement(announcement: SchoolAnnouncement)
 
+    // --- Chat Rooms ---
+    @Query("SELECT * FROM chat_rooms ORDER BY createdAtMillis ASC")
+    fun getAllChatRooms(): Flow<List<ChatRoom>>
+
+    @Query("SELECT * FROM chat_rooms WHERE id = :roomId LIMIT 1")
+    fun getChatRoomById(roomId: String): Flow<ChatRoom?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChatRoom(room: ChatRoom): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChatRooms(rooms: List<ChatRoom>)
+
+    @Update
+    suspend fun updateChatRoom(room: ChatRoom)
+
+    @Delete
+    suspend fun deleteChatRoom(room: ChatRoom)
+
+    @Query("DELETE FROM chat_rooms WHERE id = :roomId")
+    suspend fun deleteChatRoomById(roomId: String)
+
+    @Query("UPDATE chat_rooms SET isMutedForStudents = :isMuted WHERE id = :roomId")
+    suspend fun setRoomStudentMute(roomId: String, isMuted: Boolean)
+
+    @Query("UPDATE chat_rooms SET pinnedNotice = :notice, pinnedBy = :pinnedBy WHERE id = :roomId")
+    suspend fun setRoomPinnedNotice(roomId: String, notice: String?, pinnedBy: String?)
+
     // --- Chat Messages ---
     @Query("SELECT * FROM chat_messages WHERE channelId = :channelId ORDER BY timestampMillis ASC")
     fun getMessagesForChannel(channelId: String): Flow<List<ChatMessage>>
@@ -194,9 +294,40 @@ interface SchoolDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChatMessage(message: ChatMessage): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChatMessages(messages: List<ChatMessage>)
+
+    @Query("UPDATE chat_messages SET isModerated = 1, deletedBy = :moderatorName, moderationReason = :reason WHERE id = :messageId")
+    suspend fun moderateMessageWithReason(messageId: Long, moderatorName: String, reason: String)
+
     @Query("UPDATE chat_messages SET isModerated = 1, deletedBy = :moderatorName WHERE id = :messageId")
     suspend fun moderateMessage(messageId: Long, moderatorName: String)
 
+    @Query("UPDATE chat_messages SET isModerated = 0, deletedBy = NULL, moderationReason = NULL WHERE id = :messageId")
+    suspend fun unmoderateMessage(messageId: Long)
+
+    @Query("UPDATE chat_messages SET isPinned = :isPinned WHERE id = :messageId")
+    suspend fun setMessagePinned(messageId: Long, isPinned: Boolean)
+
     @Query("DELETE FROM chat_messages WHERE id = :messageId")
     suspend fun deleteChatMessage(messageId: Long)
+
+    @Query("DELETE FROM chat_messages WHERE channelId = :channelId")
+    suspend fun deleteMessagesForChannel(channelId: String)
+
+    // --- Log & History Clearance ---
+    @Query("DELETE FROM chat_messages")
+    suspend fun clearAllChatMessages()
+
+    @Query("DELETE FROM teacher_attendance")
+    suspend fun clearAllTeacherAttendance()
+
+    @Query("DELETE FROM student_attendance")
+    suspend fun clearAllStudentAttendance()
+
+    @Query("DELETE FROM cbt_submissions")
+    suspend fun clearAllCbtSubmissions()
+
+    @Query("DELETE FROM assignment_submissions")
+    suspend fun clearAllAssignmentSubmissions()
 }

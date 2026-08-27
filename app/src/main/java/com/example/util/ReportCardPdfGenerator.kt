@@ -12,6 +12,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.example.data.model.ReportCard
+import com.example.data.model.SchoolProfile
 import com.example.data.model.StudentGrade
 import java.io.File
 import java.io.FileOutputStream
@@ -23,9 +24,10 @@ object ReportCardPdfGenerator {
     fun generateAndShareReportCard(
         context: Context,
         reportCard: ReportCard,
-        grades: List<StudentGrade>
+        grades: List<StudentGrade>,
+        schoolProfile: SchoolProfile? = null
     ): File? {
-        val file = generatePdf(context, reportCard, grades) ?: return null
+        val file = generatePdf(context, reportCard, grades, schoolProfile) ?: return null
         sharePdf(context, file, reportCard.studentName)
         return file
     }
@@ -33,7 +35,8 @@ object ReportCardPdfGenerator {
     fun generatePdf(
         context: Context,
         reportCard: ReportCard,
-        grades: List<StudentGrade>
+        grades: List<StudentGrade>,
+        schoolProfile: SchoolProfile? = null
     ): File? {
         try {
             val pdfDocument = PdfDocument()
@@ -61,7 +64,7 @@ object ReportCardPdfGenerator {
             val headerPaint = Paint().apply {
                 isAntiAlias = true
                 color = Color.rgb(30, 58, 138) // Deep Blue
-                textSize = 16f
+                textSize = 15f
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             }
 
@@ -99,11 +102,11 @@ object ReportCardPdfGenerator {
             canvas.drawRoundRect(headerBg, 8f, 8f, linePaint)
 
             // School Title
-            val titleText = "ACADEMIATRACK SECONDARY COLLEGE"
+            val titleText = (schoolProfile?.schoolName ?: "KINGSWAY MODEL INTERNATIONAL COLLEGE").uppercase()
             val titleWidth = headerPaint.measureText(titleText)
             canvas.drawText(titleText, (pageWidth - titleWidth) / 2, margin + 26f, headerPaint)
 
-            val mottoText = "Excellence in Character, Leadership, and Academic Distinction"
+            val mottoText = schoolProfile?.schoolMotto ?: "Excellence in Character, Leadership, and Academic Distinction"
             val mottoWidth = subHeaderPaint.measureText(mottoText)
             canvas.drawText(mottoText, (pageWidth - mottoWidth) / 2, margin + 42f, subHeaderPaint)
 
@@ -115,7 +118,9 @@ object ReportCardPdfGenerator {
             canvas.drawText(termTitle, (pageWidth - termTitleWidth) / 2, margin + 65f, boldPaint)
 
             // Session & Term badge
-            val badgeText = "${reportCard.term.uppercase()} | ACADEMIC SESSION ${reportCard.session}"
+            val displayTerm = reportCard.term.ifBlank { schoolProfile?.currentTerm ?: "1st Term" }
+            val displaySession = reportCard.session.ifBlank { schoolProfile?.academicSession ?: "2025/2026" }
+            val badgeText = "${displayTerm.uppercase()} | ACADEMIC SESSION $displaySession"
             subHeaderPaint.textSize = 8.5f
             subHeaderPaint.color = Color.rgb(79, 70, 229)
             val badgeWidth = subHeaderPaint.measureText(badgeText)
@@ -274,7 +279,8 @@ object ReportCardPdfGenerator {
             canvas.drawText(reportCard.principalRemark, margin + 12f, yPos + 90f, textPaint)
             canvas.drawLine(margin + 12f, yPos + 104f, margin + 350f, yPos + 104f, linePaint)
             textPaint.textSize = 7.5f
-            canvas.drawText("Principal's Signature & Official School Stamp", margin + 12f, yPos + 112f, textPaint)
+            val princLabel = schoolProfile?.principalName?.let { "$it (Principal) & Stamp" } ?: "Principal's Signature & Official School Stamp"
+            canvas.drawText(princLabel, margin + 12f, yPos + 112f, textPaint)
 
             // Stamp Box
             val stampBox = RectF(margin + contentWidth - 110f, yPos + 12f, margin + contentWidth - 12f, yPos + 100f)
@@ -288,12 +294,13 @@ object ReportCardPdfGenerator {
             boldPaint.textSize = 8f
             canvas.drawText("OFFICIAL SEAL", stampBox.left + 15f, stampBox.top + 28f, boldPaint)
             subHeaderPaint.textSize = 7f
-            canvas.drawText("APPROVED", stampBox.left + 22f, stampBox.top + 48f, subHeaderPaint)
+            canvas.drawText(if (reportCard.isApprovedByAdmin) "APPROVED" else "PENDING", stampBox.left + 22f, stampBox.top + 48f, subHeaderPaint)
             val dateStr = SimpleDateFormat("dd/MM/yyyy", Locale.US).format(Date())
             canvas.drawText(dateStr, stampBox.left + 24f, stampBox.top + 68f, subHeaderPaint)
 
             // Footer
-            val footerText = "Generated via AcademiaTrack Secondary School Portal • Verified Digital Copy"
+            val schoolLabel = schoolProfile?.schoolName ?: "Kingsway Model College"
+            val footerText = "Generated via $schoolLabel Portal • Verified Digital Copy"
             textPaint.textSize = 7.5f
             textPaint.color = Color.rgb(148, 163, 184)
             val footerW = textPaint.measureText(footerText)

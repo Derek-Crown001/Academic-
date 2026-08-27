@@ -34,7 +34,9 @@ fun AdminPortalScreen(
     viewModel: SchoolViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val currentTab by viewModel.currentTab.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val allStudents by viewModel.allStudents.collectAsState()
     val allTeachers by viewModel.allTeachers.collectAsState()
     val allClasses by viewModel.allClasses.collectAsState()
@@ -42,6 +44,9 @@ fun AdminPortalScreen(
     val allCbtExams by viewModel.allCbtExams.collectAsState()
     val allReportCards by viewModel.allReportCards.collectAsState()
     val allAnnouncements by viewModel.allAnnouncements.collectAsState()
+    val schoolProfile by viewModel.schoolProfile.collectAsState()
+    val allTeacherAttendance by viewModel.allTeacherAttendance.collectAsState()
+    val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsState()
 
     var showAddSubjectDialog by remember { mutableStateOf(false) }
     var showBroadcastAnnouncementDialog by remember { mutableStateOf(false) }
@@ -51,10 +56,14 @@ fun AdminPortalScreen(
         ScrollableTabRow(
             selectedTabIndex = when (currentTab) {
                 PortalTab.DASHBOARD -> 0
-                PortalTab.SUBJECTS -> 1
-                PortalTab.REPORT_CARDS -> 2
-                PortalTab.ANNOUNCEMENTS -> 3
-                PortalTab.STAFF_CHAT, PortalTab.CLASS_CHAT_MODERATION -> 4
+                PortalTab.CLASSES -> 1
+                PortalTab.STAFF_ATTENDANCE -> 2
+                PortalTab.REPORT_CARDS -> 3
+                PortalTab.ADMIN_AI_ASSISTANT -> 4
+                PortalTab.SCHOOL_SETTINGS -> 5
+                PortalTab.SUBJECTS -> 6
+                PortalTab.ANNOUNCEMENTS -> 7
+                PortalTab.STAFF_CHAT, PortalTab.CLASS_CHAT_MODERATION -> 8
                 else -> 0
             },
             edgePadding = 16.dp,
@@ -68,16 +77,40 @@ fun AdminPortalScreen(
                 icon = { Icon(Icons.Rounded.Dashboard, contentDescription = null) }
             )
             Tab(
-                selected = currentTab == PortalTab.SUBJECTS,
-                onClick = { viewModel.selectTab(PortalTab.SUBJECTS) },
-                text = { Text("Subjects & Staff", fontWeight = FontWeight.SemiBold) },
-                icon = { Icon(Icons.Rounded.Subject, contentDescription = null) }
+                selected = currentTab == PortalTab.CLASSES,
+                onClick = { viewModel.selectTab(PortalTab.CLASSES) },
+                text = { Text("Classes & Arms", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.MeetingRoom, contentDescription = null) }
+            )
+            Tab(
+                selected = currentTab == PortalTab.STAFF_ATTENDANCE,
+                onClick = { viewModel.selectTab(PortalTab.STAFF_ATTENDANCE) },
+                text = { Text("Staff Attendance", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.Schedule, contentDescription = null) }
             )
             Tab(
                 selected = currentTab == PortalTab.REPORT_CARDS,
                 onClick = { viewModel.selectTab(PortalTab.REPORT_CARDS) },
-                text = { Text("Report Cards", fontWeight = FontWeight.SemiBold) },
+                text = { Text("Seal & Approve", fontWeight = FontWeight.SemiBold) },
                 icon = { Icon(Icons.Rounded.Assessment, contentDescription = null) }
+            )
+            Tab(
+                selected = currentTab == PortalTab.ADMIN_AI_ASSISTANT,
+                onClick = { viewModel.selectTab(PortalTab.ADMIN_AI_ASSISTANT) },
+                text = { Text("AI Assistant", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null) }
+            )
+            Tab(
+                selected = currentTab == PortalTab.SCHOOL_SETTINGS,
+                onClick = { viewModel.selectTab(PortalTab.SCHOOL_SETTINGS) },
+                text = { Text("School Settings", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.Settings, contentDescription = null) }
+            )
+            Tab(
+                selected = currentTab == PortalTab.SUBJECTS,
+                onClick = { viewModel.selectTab(PortalTab.SUBJECTS) },
+                text = { Text("Curriculum", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.Subject, contentDescription = null) }
             )
             Tab(
                 selected = currentTab == PortalTab.ANNOUNCEMENTS,
@@ -105,8 +138,54 @@ fun AdminPortalScreen(
                     subjectsCount = allSubjects.size,
                     cbtCount = allCbtExams.size,
                     reportCards = allReportCards,
+                    cloudSyncStatus = cloudSyncStatus,
+                    onSyncToCloud = { viewModel.syncAllDataToCloud() },
                     onNavigateToTab = { viewModel.selectTab(it) },
                     onBroadcastClick = { showBroadcastAnnouncementDialog = true }
+                )
+            }
+            PortalTab.CLASSES -> {
+                AdminClassManagementContent(
+                    classes = allClasses,
+                    teachers = allTeachers,
+                    students = allStudents,
+                    onAddClass = { name, level, arm, teacherId, teacherName, capacity, room ->
+                        viewModel.addClass(name, level, arm, teacherId, teacherName, capacity, room)
+                    },
+                    onUpdateClass = { updatedClass ->
+                        viewModel.updateClass(updatedClass)
+                    },
+                    onDeleteClass = { cls ->
+                        viewModel.deleteClass(cls)
+                    }
+                )
+            }
+            PortalTab.STAFF_ATTENDANCE -> {
+                AdminStaffAttendanceContent(
+                    attendances = allTeacherAttendance,
+                    teachers = allTeachers
+                )
+            }
+            PortalTab.REPORT_CARDS -> {
+                AdminReportCardsApprovalContent(
+                    reportCards = allReportCards,
+                    onApproveReportCard = { id, approved -> viewModel.approveReportCard(id, approved) },
+                    onBulkApproveClass = { className -> viewModel.bulkApproveClassReportCards(className) },
+                    onExportPdf = { rc -> viewModel.exportReportCardPdf(context = context, reportCard = rc) }
+                )
+            }
+            PortalTab.ADMIN_AI_ASSISTANT -> {
+                RoleAiAssistantScreen(
+                    viewModel = viewModel,
+                    currentUser = currentUser,
+                    currentRole = SchoolRole.ADMIN
+                )
+            }
+            PortalTab.SCHOOL_SETTINGS -> {
+                AdminSchoolSettingsContent(
+                    schoolProfile = schoolProfile,
+                    onSaveProfile = { updated -> viewModel.updateSchoolProfile(updated) },
+                    onClearDemoLogs = { viewModel.clearAllActivityLogsAndHistory() }
                 )
             }
             PortalTab.SUBJECTS -> {
@@ -114,12 +193,6 @@ fun AdminPortalScreen(
                     subjects = allSubjects,
                     teachers = allTeachers,
                     onAddSubjectClick = { showAddSubjectDialog = true }
-                )
-            }
-            PortalTab.REPORT_CARDS -> {
-                AdminReportCardsContent(
-                    reportCards = allReportCards,
-                    onToggleApprove = { id, approved -> viewModel.approveReportCard(id, approved) }
                 )
             }
             PortalTab.ANNOUNCEMENTS -> {
@@ -165,6 +238,8 @@ fun AdminDashboardContent(
     subjectsCount: Int,
     cbtCount: Int,
     reportCards: List<ReportCard>,
+    cloudSyncStatus: com.example.service.firestore.CloudSyncStatus,
+    onSyncToCloud: () -> Unit,
     onNavigateToTab: (PortalTab) -> Unit,
     onBroadcastClick: () -> Unit
 ) {
@@ -209,15 +284,144 @@ fun AdminDashboardContent(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    Button(
-                        onClick = onBroadcastClick,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1E3A8A)),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.testTag("admin_broadcast_button")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Rounded.Campaign, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Broadcast School Announcement", fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = onBroadcastClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1E3A8A)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("admin_broadcast_button")
+                        ) {
+                            Icon(Icons.Rounded.Campaign, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Broadcast Notice", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+
+                        FilledTonalButton(
+                            onClick = onSyncToCloud,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = Color.White.copy(alpha = 0.18f),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("admin_cloud_sync_button")
+                        ) {
+                            Icon(
+                                if (cloudSyncStatus.state == com.example.service.firestore.CloudSyncState.SYNCING)
+                                    Icons.Rounded.Sync
+                                else
+                                    Icons.Rounded.CloudSync,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Sync Cloud", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Firebase Cloud Firestore Status Card
+        item {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when (cloudSyncStatus.state) {
+                                    com.example.service.firestore.CloudSyncState.SYNCING -> PrimaryLight.copy(alpha = 0.12f)
+                                    com.example.service.firestore.CloudSyncState.SUCCESS -> AcademicEmerald.copy(alpha = 0.12f)
+                                    com.example.service.firestore.CloudSyncState.ERROR -> AcademicAmber.copy(alpha = 0.12f)
+                                    else -> PrimaryLight.copy(alpha = 0.12f)
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = when (cloudSyncStatus.state) {
+                                com.example.service.firestore.CloudSyncState.SYNCING -> Icons.Rounded.Sync
+                                com.example.service.firestore.CloudSyncState.SUCCESS -> Icons.Rounded.CloudDone
+                                com.example.service.firestore.CloudSyncState.ERROR -> Icons.Rounded.CloudOff
+                                else -> Icons.Rounded.CloudQueue
+                            },
+                            contentDescription = null,
+                            tint = when (cloudSyncStatus.state) {
+                                com.example.service.firestore.CloudSyncState.SYNCING -> PrimaryLight
+                                com.example.service.firestore.CloudSyncState.SUCCESS -> AcademicEmerald
+                                com.example.service.firestore.CloudSyncState.ERROR -> AcademicAmber
+                                else -> PrimaryLight
+                            }
+                        )
+                    }
+
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Firebase Cloud Firestore",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = when (cloudSyncStatus.state) {
+                                    com.example.service.firestore.CloudSyncState.SYNCING -> PrimaryLight.copy(alpha = 0.15f)
+                                    com.example.service.firestore.CloudSyncState.SUCCESS -> AcademicEmerald.copy(alpha = 0.15f)
+                                    com.example.service.firestore.CloudSyncState.ERROR -> AcademicAmber.copy(alpha = 0.15f)
+                                    else -> PrimaryLight.copy(alpha = 0.15f)
+                                }
+                            ) {
+                                Text(
+                                    text = when (cloudSyncStatus.state) {
+                                        com.example.service.firestore.CloudSyncState.SYNCING -> "SYNCING"
+                                        com.example.service.firestore.CloudSyncState.SUCCESS -> "LIVE SYNC"
+                                        com.example.service.firestore.CloudSyncState.ERROR -> "OFFLINE READY"
+                                        else -> "ONLINE"
+                                    },
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when (cloudSyncStatus.state) {
+                                        com.example.service.firestore.CloudSyncState.SYNCING -> PrimaryLight
+                                        com.example.service.firestore.CloudSyncState.SUCCESS -> AcademicEmerald
+                                        com.example.service.firestore.CloudSyncState.ERROR -> AcademicAmber
+                                        else -> PrimaryLight
+                                    }
+                                )
+                            }
+                        }
+                        Text(
+                            text = cloudSyncStatus.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onSyncToCloud,
+                        modifier = Modifier.testTag("refresh_cloud_sync_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "Sync Cloud",
+                            tint = PrimaryLight
+                        )
                     }
                 }
             }
@@ -241,8 +445,21 @@ fun AdminDashboardContent(
 
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                AdminStatCard(title = "Class Arms", value = "$classesCount", icon = Icons.Rounded.MeetingRoom, color = SecondaryLight, modifier = Modifier.weight(1f))
-                AdminStatCard(title = "CBT Assessments", value = "$cbtCount", icon = Icons.Rounded.Quiz, color = AcademicAmber, modifier = Modifier.weight(1f))
+                AdminStatCard(
+                    title = "Class Arms",
+                    value = "$classesCount",
+                    icon = Icons.Rounded.MeetingRoom,
+                    color = SecondaryLight,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onNavigateToTab(PortalTab.CLASSES) }
+                )
+                AdminStatCard(
+                    title = "CBT Assessments",
+                    value = "$cbtCount",
+                    icon = Icons.Rounded.Quiz,
+                    color = AcademicAmber,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
@@ -309,13 +526,14 @@ fun AdminStatCard(
     value: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     color: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        modifier = modifier
+        modifier = if (onClick != null) modifier.clickable { onClick() } else modifier
     ) {
         Column(
             modifier = Modifier.padding(14.dp),

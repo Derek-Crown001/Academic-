@@ -24,7 +24,18 @@ data class SchoolUser(
     val assignedSubjects: String = "", // e.g. "Mathematics, Physics" (for teachers)
     val studentChildId: String? = null, // for parents to link their child
     val studentChildName: String? = null,
-    val avatarColorHex: String = "#1E40AF"
+    val avatarColorHex: String = "#1E40AF",
+    val photoUri: String? = null, // Profile picture from local storage / phone file manager
+    val gender: String = "Female", // "Male" or "Female"
+    val dateOfBirth: String = "2009-05-14",
+    val guardianName: String = "",
+    val guardianPhone: String = "",
+    val guardianEmail: String = "",
+    val residentialAddress: String = "",
+    val bloodGroup: String = "O+",
+    val genotype: String = "AA",
+    val admissionDate: String = "2024-09-10",
+    val stateOfOrigin: String = "Lagos"
 )
 
 @Entity(tableName = "school_classes")
@@ -177,8 +188,49 @@ data class ReportCard(
     val attendanceTotal: Int = 65,
     val classTeacherRemark: String = "An exemplary and highly disciplined student with great aptitude in Science and Mathematics.",
     val principalRemark: String = "Outstanding academic performance. Keep up the high standard of excellence.",
+    val isPublishedByTeacher: Boolean = true,
+    val teacherPublishedAtMillis: Long? = System.currentTimeMillis(),
     val isApprovedByAdmin: Boolean = true,
-    val approvedAtMillis: Long = System.currentTimeMillis()
+    val approvedAtMillis: Long? = System.currentTimeMillis()
+)
+
+@Entity(tableName = "school_profile")
+data class SchoolProfile(
+    @PrimaryKey val id: Long = 1,
+    val schoolCode: String = "SCH-KINGSWAY-01",
+    val schoolName: String = "Kingsway Model International College",
+    val schoolMotto: String = "Excellence, Knowledge & Integrity",
+    val schoolAddress: String = "Plot 12, Academic Avenue, Victoria Island, Lagos",
+    val schoolEmail: String = "info@kingswaycollege.edu.ng",
+    val schoolPhone: String = "+234 803 123 4567",
+    val academicSession: String = "2025/2026",
+    val currentTerm: String = "1st Term",
+    val principalName: String = "Dr. C. Adebayo, Ph.D",
+    val schoolLogoBadge: String = "KMIC"
+)
+
+@Entity(tableName = "teacher_attendance")
+data class TeacherAttendance(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val teacherId: String,
+    val teacherName: String,
+    val dateString: String, // e.g. "2026-08-25"
+    val clockInTimeMillis: Long,
+    val clockOutTimeMillis: Long? = null,
+    val status: String = "CLOCKED_IN", // "CLOCKED_IN", "CLOCKED_OUT"
+    val remarks: String = "On duty"
+)
+
+@Entity(tableName = "student_attendance")
+data class StudentAttendanceRecord(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val studentId: String,
+    val studentName: String,
+    val className: String,
+    val dateString: String, // "2026-08-25"
+    val status: String = "PRESENT", // "PRESENT", "ABSENT", "LATE"
+    val markedByTeacherId: String = "",
+    val markedAtMillis: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "school_announcements")
@@ -194,6 +246,26 @@ data class SchoolAnnouncement(
     val postedAtMillis: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "chat_rooms")
+data class ChatRoom(
+    @PrimaryKey val id: String, // e.g. "STAFF_GENERAL", "CLASS_SS2_GOLD", "STUDY_MATH_SS2"
+    val title: String,
+    val description: String = "",
+    val topic: String = "General", // "Official Class", "Staff Only", "STEM Hub", "Peer Study", "Humanities"
+    val allowedRoles: String = "ALL", // "ALL", "STAFF", "STUDENTS"
+    val targetClass: String = "ALL", // "ALL", "SS 2 Gold", "SS 3 Science", etc.
+    val isModerated: Boolean = true,
+    val isMutedForStudents: Boolean = false, // When true, students are read-only; only teachers/admins can post
+    val pinnedNotice: String? = null,
+    val pinnedBy: String? = null,
+    val createdBy: String = "System",
+    val creatorRole: SchoolRole = SchoolRole.ADMIN,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val colorHex: String = "#1E40AF",
+    val iconName: String = "Forum",
+    val memberCount: Int = 32
+)
+
 @Entity(tableName = "chat_messages")
 data class ChatMessage(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -205,5 +277,12 @@ data class ChatMessage(
     val message: String,
     val timestampMillis: Long = System.currentTimeMillis(),
     val isModerated: Boolean = false,
-    val deletedBy: String? = null
+    val moderationReason: String? = null, // "Off-topic chat", "Inappropriate language", "Exam malpractice", "Spam"
+    val deletedBy: String? = null,
+    val isPinned: Boolean = false,
+    val replyToMessageId: Long? = null,
+    val replyToSender: String? = null,
+    val replyToText: String? = null,
+    val senderAvatarColor: String = "#1E40AF",
+    val senderPhotoUri: String? = null
 )

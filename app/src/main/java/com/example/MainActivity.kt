@@ -1,9 +1,12 @@
 package com.example
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -28,6 +31,7 @@ import com.example.data.model.SchoolRole
 import com.example.data.model.SchoolUser
 import com.example.ui.components.RoleBadge
 import com.example.ui.components.SecurityPinDialog
+import com.example.ui.components.UserAvatar
 import com.example.ui.screens.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.SchoolViewModel
@@ -49,6 +53,8 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SchoolManagementApp(viewModel: SchoolViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isAuthenticated by viewModel.isAuthenticated.collectAsState()
     val currentRole by viewModel.currentRole.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
     val allUsers by viewModel.allUsers.collectAsState()
@@ -68,6 +74,17 @@ fun SchoolManagementApp(viewModel: SchoolViewModel) {
         }
     }
 
+    // If not authenticated with Firebase Auth, present the full Login Navigation Flow
+    if (!isAuthenticated) {
+        LoginScreen(
+            viewModel = viewModel,
+            onLoginSuccess = {
+                // Navigates directly into the respective role dashboard
+            }
+        )
+        return
+    }
+
     // If an interactive CBT Exam is actively running, present fullscreen CBT Runner
     if (cbtRunnerState.isRunning || (cbtRunnerState.isSubmitted && cbtRunnerState.submissionResult != null)) {
         CbtExamRunnerScreen(viewModel = viewModel)
@@ -79,6 +96,16 @@ fun SchoolManagementApp(viewModel: SchoolViewModel) {
         SchoolRole.TEACHER -> Color(0xFF0F766E)
         SchoolRole.STUDENT -> PrimaryLight
         SchoolRole.PARENT -> Color(0xFF7C3AED)
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            currentUser?.let { user ->
+                viewModel.updateUserPhoto(user.id, it.toString())
+            }
+        }
     }
 
     Scaffold(
@@ -117,7 +144,7 @@ fun SchoolManagementApp(viewModel: SchoolViewModel) {
                                 color = MaterialTheme.colorScheme.onBackground
                             )
                             Text(
-                                text = "Secondary School Portal",
+                                text = "${currentRole.name.lowercase().replaceFirstChar { it.uppercase() }} Portal",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.Medium
@@ -126,6 +153,15 @@ fun SchoolManagementApp(viewModel: SchoolViewModel) {
                     }
                 },
                 actions = {
+                    // Profile Photo Avatar
+                    UserAvatar(
+                        user = currentUser,
+                        size = 34.dp,
+                        onUploadClick = { photoPickerLauncher.launch("image/*") }
+                    )
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
                     // Role Switcher Button
                     Surface(
                         shape = RoundedCornerShape(20.dp),
@@ -138,7 +174,7 @@ fun SchoolManagementApp(viewModel: SchoolViewModel) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                         ) {
                             RoleBadge(role = currentRole)
                             Text(
@@ -156,7 +192,20 @@ fun SchoolManagementApp(viewModel: SchoolViewModel) {
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Sign Out Action Button
+                    IconButton(
+                        onClick = { viewModel.logout(context) },
+                        modifier = Modifier.testTag("logout_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Logout,
+                            contentDescription = "Sign Out",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -275,6 +324,23 @@ fun SchoolManagementApp(viewModel: SchoolViewModel) {
                                 }
                             }
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Sign Out Button from dialog
+                    OutlinedButton(
+                        onClick = {
+                            showRoleSwitchDialog = false
+                            viewModel.logout(context)
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AcademicRose),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Log Out of Session", fontWeight = FontWeight.SemiBold)
                     }
                 }
             },

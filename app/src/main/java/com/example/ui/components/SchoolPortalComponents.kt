@@ -293,3 +293,65 @@ fun SecurityPinDialog(
         }
     )
 }
+
+@Composable
+fun UserAvatar(
+    user: SchoolUser?,
+    size: androidx.compose.ui.unit.Dp = 44.dp,
+    showUploadBadge: Boolean = false,
+    onUploadClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val avatarBgColor = try {
+        Color(android.graphics.Color.parseColor(user?.avatarColorHex ?: "#1E40AF"))
+    } catch (e: Exception) {
+        PrimaryLight
+    }
+
+    val initials = user?.name?.split(" ")?.take(2)?.mapNotNull { it.firstOrNull()?.uppercase() }?.joinToString("") ?: "U"
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(avatarBgColor.copy(alpha = 0.2f))
+            .border(1.5.dp, avatarBgColor.copy(alpha = 0.6f), CircleShape)
+            .then(
+                if (onUploadClick != null) Modifier.clickable { onUploadClick() } else Modifier
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!user?.photoUri.isNullOrBlank()) {
+            coil.compose.AsyncImage(
+                model = user?.photoUri,
+                contentDescription = user?.name ?: "User Avatar",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Text(
+                text = initials,
+                color = avatarBgColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = (size.value * 0.38f).sp
+            )
+        }
+
+        if (showUploadBadge) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CameraAlt,
+                    contentDescription = "Change Photo",
+                    tint = Color.White,
+                    modifier = Modifier.size((size.value * 0.4f).dp)
+                )
+            }
+        }
+    }
+}
+

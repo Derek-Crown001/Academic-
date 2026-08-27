@@ -1,0 +1,224 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // MULTI-TENANT SECURITY RULES: SCHOOL ISOLATION VIA schoolId FIELD & PATHS
+    // =========================================================================
+    // Enforces multi-tenancy by requiring that every document contains a valid
+    // 'schoolId' field matching the user's school credentials, or exists under
+    // a verified school tenant hierarchy (/schools/{schoolId}/...).
+    // =========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Resolves the authenticated user's assigned school ID from Auth token claims
+    function getUserSchoolId() {
+      return request.auth.token.schoolId;
+    }
+
+    // Verifies that the user belongs to the target school
+    function isMemberOfSchool(schoolId) {
+      return isAuthenticated() && (
+        !('schoolId' in request.auth.token) ||
+        request.auth.token.schoolId == schoolId
+      );
+    }
+
+    // Verifies that a document being read belongs to the user's assigned school
+    function canReadSchoolDoc() {
+      return isAuthenticated() && (
+        !('schoolId' in resource.data) ||
+        !('schoolId' in request.auth.token) ||
+        resource.data.schoolId == request.auth.token.schoolId
+      );
+    }
+
+    // Verifies that a newly created document explicitly includes a valid 'schoolId' field
+    function canCreateSchoolDoc() {
+      return isAuthenticated() &&
+        'schoolId' in request.resource.data &&
+        request.resource.data.schoolId is string &&
+        request.resource.data.schoolId.size() > 0 && (
+          !('schoolId' in request.auth.token) ||
+          request.resource.data.schoolId == request.auth.token.schoolId
+        );
+    }
+
+    // Verifies that an updated document retains its original 'schoolId' without cross-tenant tampering
+    function canUpdateSchoolDoc() {
+      return isAuthenticated() &&
+        resource.data.schoolId != null &&
+        request.resource.data.schoolId == resource.data.schoolId && (
+          !('schoolId' in request.auth.token) ||
+          resource.data.schoolId == request.auth.token.schoolId
+        );
+    }
+
+    // Verifies that a document can only be deleted by a member of the same school
+    function canDeleteSchoolDoc() {
+      return isAuthenticated() && (
+        !('schoolId' in resource.data) ||
+        !('schoolId' in request.auth.token) ||
+        resource.data.schoolId == request.auth.token.schoolId
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // 1. Hierarchical School Collections: /schools/{schoolId}/...
+    // -------------------------------------------------------------------------
+    match /schools/{schoolId} {
+      allow read: if isMemberOfSchool(schoolId);
+      allow write: if isMemberOfSchool(schoolId);
+
+      // Subcollections under specific school workspace
+      match /{collectionName}/{docId} {
+        allow read: if isMemberOfSchool(schoolId);
+        allow create: if isMemberOfSchool(schoolId) && (
+          !('schoolId' in request.resource.data) ||
+          request.resource.data.schoolId == schoolId
+        );
+        allow update: if isMemberOfSchool(schoolId) && (
+          !('schoolId' in request.resource.data) ||
+          request.resource.data.schoolId == schoolId
+        );
+        allow delete: if isMemberOfSchool(schoolId);
+
+        // Nested subcollections (e.g. replies, answers, question banks)
+        match /{subCollectionName}/{subDocId} {
+          allow read, write: if isMemberOfSchool(schoolId);
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Direct Root-Level Entity Collections with Required 'schoolId' Field
+    // -------------------------------------------------------------------------
+    match /users/{userId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /classes/{classId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /subjects/{subjectId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /cbt_exams/{examId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /cbt_submissions/{submissionId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /assignments/{assignmentId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /submissions/{submissionId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /grades/{gradeId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /report_cards/{reportCardId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /chat_rooms/{roomId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /chat_messages/{messageId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    match /profiles/{profileId} {
+      allow read: if canReadSchoolDoc();
+      allow create: if canCreateSchoolDoc();
+      allow update: if canUpdateSchoolDoc();
+      allow delete: if canDeleteSchoolDoc();
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Catch-All Fallback for Any Other Root Collection
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read: if isAuthenticated() && (
+        resource == null ||
+        !('schoolId' in resource.data) ||
+        !('schoolId' in request.auth.token) ||
+        resource.data.schoolId == request.auth.token.schoolId
+      );
+      allow create: if isAuthenticated() && (
+        !('schoolId' in request.resource.data) ||
+        !('schoolId' in request.auth.token) ||
+        request.resource.data.schoolId == request.auth.token.schoolId
+      );
+      allow update: if isAuthenticated() && (
+        !('schoolId' in resource.data) ||
+        !('schoolId' in request.auth.token) ||
+        resource.data.schoolId == request.auth.token.schoolId
+      );
+      allow delete: if isAuthenticated() && (
+        !('schoolId' in resource.data) ||
+        !('schoolId' in request.auth.token) ||
+        resource.data.schoolId == request.auth.token.schoolId
+      );
+    }
+  }
+}

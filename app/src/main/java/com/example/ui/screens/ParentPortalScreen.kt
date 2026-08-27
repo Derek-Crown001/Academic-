@@ -167,15 +167,36 @@ fun ParentChildOverviewContent(
 
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = Color.White.copy(alpha = 0.2f)
+                            color = if (reportCard.isApprovedByAdmin) Color(0xFF10B981) else Color(0xFFF59E0B)
                         ) {
                             Text(
-                                text = reportCard.classPosition,
+                                text = if (reportCard.isApprovedByAdmin) "OFFICIAL REPORT" else "PENDING APPROVAL",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             )
+                        }
+                    }
+
+                    if (!reportCard.isApprovedByAdmin) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.Black.copy(alpha = 0.25f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Rounded.PendingActions, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(18.dp))
+                                Text(
+                                    text = "Class Teacher has prepared these results. Awaiting School Principal's official seal and release.",
+                                    color = Color.White,
+                                    fontSize = 11.5.sp
+                                )
+                            }
                         }
                     }
 
@@ -191,7 +212,10 @@ fun ParentChildOverviewContent(
                     ) {
                         Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Download Official PDF Report Card", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (reportCard.isApprovedByAdmin) "Download Official PDF Report Card" else "Preview Draft PDF Report Card",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

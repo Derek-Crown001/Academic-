@@ -23,9 +23,13 @@ import kotlinx.coroutines.launch
         StudentGrade::class,
         ReportCard::class,
         SchoolAnnouncement::class,
-        ChatMessage::class
+        ChatRoom::class,
+        ChatMessage::class,
+        SchoolProfile::class,
+        TeacherAttendance::class,
+        StudentAttendanceRecord::class
     ],
-    version = 1,
+    version = 5,
     exportSchema = false
 )
 abstract class SchoolDatabase : RoomDatabase() {
@@ -116,7 +120,16 @@ abstract class SchoolDatabase : RoomDatabase() {
                     phone = "+234 810 998 7766",
                     passcode = "1234",
                     className = "SS 2 Gold",
-                    avatarColorHex = "#059669"
+                    avatarColorHex = "#059669",
+                    gender = "Female",
+                    dateOfBirth = "2009-04-12",
+                    guardianName = "Mrs. Ngozi Nwosu",
+                    guardianPhone = "+234 803 777 8899",
+                    guardianEmail = "ngozi.nwosu@parent.com",
+                    residentialAddress = "14 Victoria Crown Estate, Lekki Phase 1",
+                    bloodGroup = "O+",
+                    genotype = "AA",
+                    admissionDate = "2023-09-11"
                 ),
                 SchoolUser(
                     id = "STU-2025-043",
@@ -126,7 +139,16 @@ abstract class SchoolDatabase : RoomDatabase() {
                     phone = "+234 811 223 4455",
                     passcode = "1234",
                     className = "SS 2 Gold",
-                    avatarColorHex = "#D97706"
+                    avatarColorHex = "#D97706",
+                    gender = "Male",
+                    dateOfBirth = "2008-11-28",
+                    guardianName = "Chief Adebayo Bakare",
+                    guardianPhone = "+234 802 334 1122",
+                    guardianEmail = "adebayo.bakare@gmail.com",
+                    residentialAddress = "8 Marina Crescent, Ikoyi, Lagos",
+                    bloodGroup = "A+",
+                    genotype = "AS",
+                    admissionDate = "2023-09-11"
                 ),
                 SchoolUser(
                     id = "STU-2025-044",
@@ -136,7 +158,16 @@ abstract class SchoolDatabase : RoomDatabase() {
                     phone = "+234 812 334 5566",
                     passcode = "1234",
                     className = "SS 2 Gold",
-                    avatarColorHex = "#E11D48"
+                    avatarColorHex = "#E11D48",
+                    gender = "Female",
+                    dateOfBirth = "2009-08-19",
+                    guardianName = "Alhaji Ibrahim Mohammed",
+                    guardianPhone = "+234 803 555 7788",
+                    guardianEmail = "ibrahim.mohammed@corp.ng",
+                    residentialAddress = "25 Bourdillon Road, Ikoyi",
+                    bloodGroup = "B+",
+                    genotype = "AA",
+                    admissionDate = "2023-09-11"
                 ),
                 SchoolUser(
                     id = "PAR-2025-042",
@@ -148,7 +179,8 @@ abstract class SchoolDatabase : RoomDatabase() {
                     className = "SS 2 Gold",
                     studentChildId = "STU-2025-042",
                     studentChildName = "Chidinma Nwosu",
-                    avatarColorHex = "#9333EA"
+                    avatarColorHex = "#9333EA",
+                    residentialAddress = "14 Victoria Crown Estate, Lekki Phase 1"
                 )
             )
             dao.insertUsers(users)
@@ -499,73 +531,118 @@ abstract class SchoolDatabase : RoomDatabase() {
             )
             announcements.forEach { dao.insertAnnouncement(it) }
 
-            // 10. Chat Messages (Staff General Room & Class Rooms)
-            val chatMessages = listOf(
-                ChatMessage(
-                    channelId = "STAFF_GENERAL",
-                    channelName = "Staff General Room",
-                    senderId = "ADM-001",
-                    senderName = "Dr. C. Adebayo (Principal)",
-                    senderRole = SchoolRole.ADMIN,
-                    message = "Good morning esteemed colleagues. Please ensure all CBT test questions for SS1, SS2, and SS3 are uploaded by today.",
-                    timestampMillis = now - 7200000L
+            // 10. Initial Chat Rooms & Communication Hubs
+            val chatRooms = listOf(
+                ChatRoom(
+                    id = "STAFF_GENERAL",
+                    title = "Staff General & Academic Board",
+                    description = "Confidential staff room for teachers, subject heads, and administration.",
+                    topic = "Staff Only",
+                    allowedRoles = "STAFF",
+                    targetClass = "ALL",
+                    isModerated = true,
+                    isMutedForStudents = false,
+                    pinnedNotice = "📌 Staff Reminder: Submit finalized Term 1 exam papers for moderation by Friday 4:00 PM.",
+                    pinnedBy = "Dr. C. Adebayo (Principal)",
+                    colorHex = "#1E3A8A",
+                    iconName = "Groups",
+                    memberCount = 24
                 ),
-                ChatMessage(
-                    channelId = "STAFF_GENERAL",
-                    channelName = "Staff General Room",
-                    senderId = "TCH-101",
-                    senderName = "Mr. David Okon",
-                    senderRole = SchoolRole.TEACHER,
-                    message = "Mathematics and Physics CBT questions for SS2 Gold have been uploaded and tested, Sir. Ready for moderation.",
-                    timestampMillis = now - 5400000L
+                ChatRoom(
+                    id = "CLASS_SS2_GOLD",
+                    title = "SS 2 Gold Official Classroom",
+                    description = "Official class forum for homework guidance, subject Q&A, and teacher notices.",
+                    topic = "Official Class",
+                    allowedRoles = "ALL",
+                    targetClass = "SS 2 Gold",
+                    isModerated = true,
+                    isMutedForStudents = false,
+                    pinnedNotice = "📌 Mathematics Assignment on Circle Geometry is due this Friday on the portal. CBT test next week.",
+                    pinnedBy = "Mr. David Okon (Class Teacher)",
+                    colorHex = "#0F766E",
+                    iconName = "Class",
+                    memberCount = 35
                 ),
-                ChatMessage(
-                    channelId = "STAFF_GENERAL",
-                    channelName = "Staff General Room",
-                    senderId = "TCH-102",
-                    senderName = "Mrs. Amina Bello",
-                    senderRole = SchoolRole.TEACHER,
-                    message = "English and Literature CA grades are compiled as well. The student performance is very encouraging.",
-                    timestampMillis = now - 3600000L
+                ChatRoom(
+                    id = "CLASS_SS3_SCIENCE",
+                    title = "SS 3 Science & WAEC Prep",
+                    description = "Senior secondary science hub for JAMB/WAEC past questions, lab practicals & revision.",
+                    topic = "Science & Lab",
+                    allowedRoles = "ALL",
+                    targetClass = "SS 3 Science",
+                    isModerated = true,
+                    isMutedForStudents = false,
+                    pinnedNotice = "📌 Physics Optics practical session begins at 9:00 AM on Thursday in Physics Lab 2.",
+                    pinnedBy = "Mr. David Okon",
+                    colorHex = "#2563EB",
+                    iconName = "Science",
+                    memberCount = 28
                 ),
-                ChatMessage(
-                    channelId = "CLASS_SS2_GOLD",
-                    channelName = "SS 2 Gold Class Room",
-                    senderId = "TCH-101",
-                    senderName = "Mr. David Okon (Class Teacher)",
-                    senderRole = SchoolRole.TEACHER,
-                    message = "Welcome class! Remember our Mathematics Circle Geometry assignment is due on Friday. Submit your answers via the portal.",
-                    timestampMillis = now - 10800000L
+                ChatRoom(
+                    id = "STUDENT_STUDY_SS2_GOLD",
+                    title = "SS 2 Gold Peer Knowledge Hub",
+                    description = "Open collaborative peer study space for brainstorming, revision mnemonics & exam tips.",
+                    topic = "Peer Study",
+                    allowedRoles = "ALL",
+                    targetClass = "SS 2 Gold",
+                    isModerated = false,
+                    isMutedForStudents = false,
+                    pinnedNotice = "💡 Share your favorite science & math mnemonics here! Keep discussions helpful and friendly.",
+                    pinnedBy = "Chidinma Nwosu (Student Lead)",
+                    colorHex = "#7C3AED",
+                    iconName = "Lightbulb",
+                    memberCount = 32
                 ),
-                ChatMessage(
-                    channelId = "CLASS_SS2_GOLD",
-                    channelName = "SS 2 Gold Class Room",
-                    senderId = "STU-2025-042",
-                    senderName = "Chidinma Nwosu",
-                    senderRole = SchoolRole.STUDENT,
-                    message = "Thank you, Sir! Will the CBT exam include theorem proofs as well?",
-                    timestampMillis = now - 9000000L
+                ChatRoom(
+                    id = "MATH_PHYSICS_HUB",
+                    title = "Mathematics & Physics Olympiad Lab",
+                    description = "Advanced STEM derivations, challenging calculus problems, and step-by-step solutions.",
+                    topic = "STEM Hub",
+                    allowedRoles = "ALL",
+                    targetClass = "ALL",
+                    isModerated = true,
+                    isMutedForStudents = false,
+                    pinnedNotice = "📌 Weekly Olympiad problem posted: Solve for all real roots of x^4 - 5x^2 + 4 = 0.",
+                    pinnedBy = "Mr. David Okon",
+                    colorHex = "#EA580C",
+                    iconName = "Calculate",
+                    memberCount = 40
                 ),
-                ChatMessage(
-                    channelId = "CLASS_SS2_GOLD",
-                    channelName = "SS 2 Gold Class Room",
-                    senderId = "TCH-101",
-                    senderName = "Mr. David Okon (Class Teacher)",
-                    senderRole = SchoolRole.TEACHER,
-                    message = "The CBT exam will feature multiple-choice questions testing both computational problems and geometric deductions.",
-                    timestampMillis = now - 7200000L
-                ),
-                ChatMessage(
-                    channelId = "CLASS_SS2_GOLD",
-                    channelName = "SS 2 Gold Class Room",
-                    senderId = "ADM-001",
-                    senderName = "Dr. C. Adebayo (Principal - Moderator)",
-                    senderRole = SchoolRole.ADMIN,
-                    message = "Friendly reminder to maintain respectful discourse in this class room. Wishing SS2 Gold the best in your assessments!",
-                    timestampMillis = now - 1800000L
+                ChatRoom(
+                    id = "LITERATURE_DEBATE",
+                    title = "Literature & Debate Society",
+                    description = "Literary prose analyses, poetry breakdowns, and inter-class debate preparation.",
+                    topic = "Humanities",
+                    allowedRoles = "ALL",
+                    targetClass = "ALL",
+                    isModerated = true,
+                    isMutedForStudents = false,
+                    pinnedNotice = "📌 Debate Topic: 'Technology in Nigerian Secondary Schools: Pros vs Cons'.",
+                    pinnedBy = "Mrs. Amina Bello",
+                    colorHex = "#059669",
+                    iconName = "Forum",
+                    memberCount = 30
                 )
             )
-            chatMessages.forEach { dao.insertChatMessage(it) }
+            chatRooms.forEach { dao.insertChatRoom(it) }
+
+            // 11. Initial School Profile (Customizable per school tenant)
+            dao.insertSchoolProfile(
+                SchoolProfile(
+                    id = 1,
+                    schoolCode = "SCH-KINGSWAY-01",
+                    schoolName = "Kingsway Model International College",
+                    schoolMotto = "Excellence, Knowledge & Integrity",
+                    schoolAddress = "Plot 12, Academic Avenue, Victoria Island, Lagos",
+                    schoolEmail = "info@kingswaycollege.edu.ng",
+                    schoolPhone = "+234 803 123 4567",
+                    academicSession = "2025/2026",
+                    currentTerm = "1st Term",
+                    principalName = "Dr. C. Adebayo, Ph.D",
+                    schoolLogoBadge = "KMIC"
+                )
+            )
+            // Note: Demo chat logs and dummy attendance logs have been removed to ensure a clean slate for real school operations.
         }
     }
 }
