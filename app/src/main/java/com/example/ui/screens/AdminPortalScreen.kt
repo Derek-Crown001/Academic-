@@ -85,8 +85,8 @@ fun AdminPortalScreen(
             Tab(
                 selected = currentTab == PortalTab.STAFF_ATTENDANCE,
                 onClick = { viewModel.selectTab(PortalTab.STAFF_ATTENDANCE) },
-                text = { Text("Staff Attendance", fontWeight = FontWeight.SemiBold) },
-                icon = { Icon(Icons.Rounded.Schedule, contentDescription = null) }
+                text = { Text("Faculty & Staff", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.Badge, contentDescription = null) }
             )
             Tab(
                 selected = currentTab == PortalTab.REPORT_CARDS,
@@ -163,7 +163,23 @@ fun AdminPortalScreen(
             PortalTab.STAFF_ATTENDANCE -> {
                 AdminStaffAttendanceContent(
                     attendances = allTeacherAttendance,
-                    teachers = allTeachers
+                    teachers = allTeachers,
+                    onRegisterTeacher = { name, staffId, email, passcode, assignedClass, assignedSubjects, phone, qualification, gender ->
+                        viewModel.registerTeacher(
+                            name = name,
+                            staffId = staffId,
+                            email = email,
+                            passcode = passcode,
+                            assignedClass = assignedClass,
+                            assignedSubjects = assignedSubjects,
+                            phone = phone,
+                            qualification = qualification,
+                            gender = gender
+                        )
+                    },
+                    onDeleteTeacher = { teacher ->
+                        viewModel.deleteTeacherProfile(teacher)
+                    }
                 )
             }
             PortalTab.REPORT_CARDS -> {
@@ -439,7 +455,14 @@ fun AdminDashboardContent(
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 AdminStatCard(title = "Total Students", value = "$studentsCount", icon = Icons.Rounded.School, color = PrimaryLight, modifier = Modifier.weight(1f))
-                AdminStatCard(title = "Teaching Staff", value = "$teachersCount", icon = Icons.Rounded.CoPresent, color = AcademicViolet, modifier = Modifier.weight(1f))
+                AdminStatCard(
+                    title = "Teaching Staff",
+                    value = "$teachersCount",
+                    icon = Icons.Rounded.CoPresent,
+                    color = AcademicViolet,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onNavigateToTab(PortalTab.STAFF_ATTENDANCE) }
+                )
             }
         }
 

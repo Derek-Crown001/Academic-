@@ -391,18 +391,45 @@ fun AdminSchoolSettingsContent(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminStaffAttendanceContent(
     attendances: List<TeacherAttendance>,
-    teachers: List<SchoolUser>
+    teachers: List<SchoolUser>,
+    onRegisterTeacher: (name: String, staffId: String, email: String, passcode: String, assignedClass: String, assignedSubjects: String, phone: String, qualification: String, gender: String) -> Unit,
+    onDeleteTeacher: (SchoolUser) -> Unit = {}
 ) {
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
     val todayDateStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
     val displayDateStr = remember { SimpleDateFormat("EEEE, MMMM dd, yyyy", Locale.US).format(Date()) }
 
+    var showRegisterDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedDutyFilter by remember { mutableStateOf("ALL") } // ALL, ON_DUTY, OFF_DUTY
+    var teacherToDelete by remember { mutableStateOf<SchoolUser?>(null) }
+    var selectedTeacherToViewPasskey by remember { mutableStateOf<SchoolUser?>(null) }
+
     val todayAttendances = attendances.filter { it.dateString == todayDateStr }
     val clockedInCount = todayAttendances.count { it.status == "CLOCKED_IN" }
     val clockedOutCount = todayAttendances.count { it.status == "CLOCKED_OUT" }
+
+    val filteredTeachers = teachers.filter { teacher ->
+        val attendance = todayAttendances.find { it.teacherId == teacher.id }
+        val matchesSearch = searchQuery.isBlank() ||
+                teacher.name.contains(searchQuery, ignoreCase = true) ||
+                teacher.id.contains(searchQuery, ignoreCase = true) ||
+                teacher.email.contains(searchQuery, ignoreCase = true) ||
+                teacher.assignedSubjects.contains(searchQuery, ignoreCase = true) ||
+                teacher.className.contains(searchQuery, ignoreCase = true)
+
+        val matchesFilter = when (selectedDutyFilter) {
+            "ON_DUTY" -> attendance?.status == "CLOCKED_IN"
+            "OFF_DUTY" -> attendance?.status != "CLOCKED_IN"
+            else -> true
+        }
+
+        matchesSearch && matchesFilter
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -417,7 +444,7 @@ fun AdminStaffAttendanceContent(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -425,7 +452,7 @@ fun AdminStaffAttendanceContent(
                     ) {
                         Column {
                             Text(
-                                text = "Teacher Clock-In / Clock-Out Dashboard",
+                                text = "Faculty Directory & Attendance",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -436,12 +463,16 @@ fun AdminStaffAttendanceContent(
                             )
                         }
 
-                        Icon(
-                            Icons.Rounded.Schedule,
-                            contentDescription = null,
-                            tint = PrimaryLight,
-                            modifier = Modifier.size(30.dp)
-                        )
+                        Button(
+                            onClick = { showRegisterDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryLight),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("admin_register_teacher_button")
+                        ) {
+                            Icon(Icons.Rounded.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Register Teacher", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                        }
                     }
 
                     // Stat row
@@ -486,115 +517,502 @@ fun AdminStaffAttendanceContent(
             }
         }
 
-        // Attendance Cards per teacher
+        // Search & Filter row
         item {
-            Text(
-                text = "Faculty Attendance Live Records (${teachers.size} Staff)",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search faculty by name, ID, subject, or email") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("search_teachers_input")
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = selectedDutyFilter == "ALL",
+                        onClick = { selectedDutyFilter = "ALL" },
+                        label = { Text("All Faculty (${teachers.size})") }
+                    )
+                    FilterChip(
+                        selected = selectedDutyFilter == "ON_DUTY",
+                        onClick = { selectedDutyFilter = "ON_DUTY" },
+                        label = { Text("On Duty ($clockedInCount)") }
+                    )
+                    FilterChip(
+                        selected = selectedDutyFilter == "OFF_DUTY",
+                        onClick = { selectedDutyFilter = "OFF_DUTY" },
+                        label = { Text("Off Duty (${teachers.size - clockedInCount})") }
+                    )
+                }
+            }
         }
 
-        items(teachers) { teacher ->
-            val attendance = attendances.find { it.teacherId == teacher.id && it.dateString == todayDateStr }
-                ?: attendances.find { it.teacherId == teacher.id }
-
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier.fillMaxWidth()
+        // Header
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    when (attendance?.status) {
-                                        "CLOCKED_IN" -> Color(0xFF10B981).copy(alpha = 0.2f)
-                                        "CLOCKED_OUT" -> Color(0xFF64748B).copy(alpha = 0.2f)
-                                        else -> Color(0xFFF59E0B).copy(alpha = 0.2f)
-                                    }
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = when (attendance?.status) {
-                                    "CLOCKED_IN" -> Icons.Rounded.CheckCircle
-                                    "CLOCKED_OUT" -> Icons.Rounded.Schedule
-                                    else -> Icons.Rounded.PersonOff
-                                },
-                                contentDescription = null,
-                                tint = when (attendance?.status) {
-                                    "CLOCKED_IN" -> Color(0xFF047857)
-                                    "CLOCKED_OUT" -> Color(0xFF334155)
-                                    else -> Color(0xFFD97706)
-                                }
-                            )
-                        }
+                Text(
+                    text = "Registered Teachers & Passkeys (${filteredTeachers.size})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
+        }
 
-                        Column {
-                            Text(text = teacher.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text(
-                                text = "ID: ${teacher.id} • ${teacher.assignedSubjects}",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (filteredTeachers.isEmpty()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.School, contentDescription = null, modifier = Modifier.size(40.dp), tint = PrimaryLight)
+                        Text("No teachers found", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Tap 'Register Teacher' above to add a new teacher with their secure login passkey.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(filteredTeachers, key = { it.id }) { teacher ->
+                val attendance = attendances.find { it.teacherId == teacher.id && it.dateString == todayDateStr }
+                    ?: attendances.find { it.teacherId == teacher.id }
+
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            when (attendance?.status) {
+                                                "CLOCKED_IN" -> Color(0xFF10B981).copy(alpha = 0.2f)
+                                                "CLOCKED_OUT" -> Color(0xFF64748B).copy(alpha = 0.2f)
+                                                else -> Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                            }
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = when (attendance?.status) {
+                                            "CLOCKED_IN" -> Icons.Rounded.CheckCircle
+                                            "CLOCKED_OUT" -> Icons.Rounded.Schedule
+                                            else -> Icons.Rounded.PersonOff
+                                        },
+                                        contentDescription = null,
+                                        tint = when (attendance?.status) {
+                                            "CLOCKED_IN" -> Color(0xFF047857)
+                                            "CLOCKED_OUT" -> Color(0xFF334155)
+                                            else -> Color(0xFFD97706)
+                                        }
+                                    )
+                                }
+
+                                Column {
+                                    Text(text = teacher.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text(
+                                        text = "ID: ${teacher.id} • ${teacher.email}",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (teacher.assignedSubjects.isNotBlank() || teacher.className.isNotBlank()) {
+                                        Text(
+                                            text = "Subject/Class: ${teacher.assignedSubjects.ifBlank { "Unassigned" }} ${if (teacher.className.isNotBlank()) "(${teacher.className})" else ""}",
+                                            fontSize = 11.5.sp,
+                                            color = PrimaryLight,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = when (attendance?.status) {
+                                    "CLOCKED_IN" -> Color(0xFF10B981).copy(alpha = 0.15f)
+                                    "CLOCKED_OUT" -> Color(0xFF64748B).copy(alpha = 0.15f)
+                                    else -> Color(0xFFF59E0B).copy(alpha = 0.15f)
+                                }
+                            ) {
                                 Text(
-                                    text = "In: ${attendance?.clockInTimeMillis?.let { timeFormat.format(Date(it)) } ?: "Not Clocked"}",
-                                    fontSize = 11.5.sp,
-                                    color = if (attendance?.clockInTimeMillis != null) Color(0xFF047857) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "Out: ${attendance?.clockOutTimeMillis?.let { timeFormat.format(Date(it)) } ?: "--"}",
-                                    fontSize = 11.5.sp,
-                                    color = if (attendance?.clockOutTimeMillis != null) Color(0xFF334155) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = when (attendance?.status) {
+                                        "CLOCKED_IN" -> "ON DUTY"
+                                        "CLOCKED_OUT" -> "ENDED SHIFT"
+                                        else -> "OFF DUTY"
+                                    },
+                                    color = when (attendance?.status) {
+                                        "CLOCKED_IN" -> Color(0xFF047857)
+                                        "CLOCKED_OUT" -> Color(0xFF334155)
+                                        else -> Color(0xFFB45309)
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                 )
                             }
                         }
-                    }
 
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = when (attendance?.status) {
-                            "CLOCKED_IN" -> Color(0xFF10B981).copy(alpha = 0.15f)
-                            "CLOCKED_OUT" -> Color(0xFF64748B).copy(alpha = 0.15f)
-                            else -> Color(0xFFF59E0B).copy(alpha = 0.15f)
+                        // Passkey and Credentials Card
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(Icons.Rounded.VpnKey, contentDescription = null, tint = PrimaryLight, modifier = Modifier.size(15.dp))
+                                    Text(
+                                        text = "Teacher Login Passkey: ",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = teacher.passcode.ifBlank { "teach123" },
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = PrimaryLight
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    IconButton(
+                                        onClick = { selectedTeacherToViewPasskey = teacher },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Info, contentDescription = "View Details", tint = PrimaryLight, modifier = Modifier.size(16.dp))
+                                    }
+                                    IconButton(
+                                        onClick = { teacherToDelete = teacher },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.DeleteOutline, contentDescription = "Remove Teacher", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
                         }
-                    ) {
-                        Text(
-                            text = when (attendance?.status) {
-                                "CLOCKED_IN" -> "ON DUTY"
-                                "CLOCKED_OUT" -> "ENDED SHIFT"
-                                else -> "OFF DUTY"
-                            },
-                            color = when (attendance?.status) {
-                                "CLOCKED_IN" -> Color(0xFF047857)
-                                "CLOCKED_OUT" -> Color(0xFF334155)
-                                else -> Color(0xFFB45309)
-                            },
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
                     }
                 }
             }
         }
     }
+
+    // 1. Register Teacher Dialog
+    if (showRegisterDialog) {
+        RegisterTeacherDialog(
+            onDismiss = { showRegisterDialog = false },
+            onConfirm = { name, staffId, email, passcode, assignedClass, assignedSubjects, phone, qualification, gender ->
+                onRegisterTeacher(name, staffId, email, passcode, assignedClass, assignedSubjects, phone, qualification, gender)
+                showRegisterDialog = false
+            }
+        )
+    }
+
+    // 2. View Details / Credentials Dialog
+    selectedTeacherToViewPasskey?.let { teacher ->
+        AlertDialog(
+            onDismissRequest = { selectedTeacherToViewPasskey = null },
+            icon = { Icon(Icons.Rounded.Badge, contentDescription = null, tint = PrimaryLight) },
+            title = { Text("Teacher Portal Login Credentials") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = "Teacher Name: ${teacher.name}", fontWeight = FontWeight.Bold)
+                    Text(text = "Staff ID: ${teacher.id}")
+                    Text(text = "Login Email: ${teacher.email}")
+                    Text(text = "Assigned Class: ${teacher.className.ifBlank { "None" }}")
+                    Text(text = "Subjects: ${teacher.assignedSubjects.ifBlank { "None" }}")
+                    Divider(modifier = Modifier.padding(vertical = 4.dp))
+                    Surface(
+                        color = PrimaryLight.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(text = "Unique Login Passkey (PIN):", fontSize = 11.5.sp, color = PrimaryLight, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = teacher.passcode.ifBlank { "teach123" },
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black,
+                                color = PrimaryLight
+                            )
+                            Text(
+                                text = "Teacher uses this Passkey along with the School Passkey to log in to the Teacher Portal.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { selectedTeacherToViewPasskey = null }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    // 3. Delete Confirmation Dialog
+    teacherToDelete?.let { teacher ->
+        AlertDialog(
+            onDismissRequest = { teacherToDelete = null },
+            icon = { Icon(Icons.Rounded.Warning, contentDescription = null, tint = Color(0xFFEF4444)) },
+            title = { Text("Remove Teacher '${teacher.name}'?") },
+            text = {
+                Text("Are you sure you want to remove ${teacher.name} (Staff ID: ${teacher.id}) from the faculty directory? They will no longer be able to log in to the Teacher Portal.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteTeacher(teacher)
+                        teacherToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("Delete Teacher")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { teacherToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RegisterTeacherDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (
+        name: String,
+        staffId: String,
+        email: String,
+        passcode: String,
+        assignedClass: String,
+        assignedSubjects: String,
+        phone: String,
+        qualification: String,
+        gender: String
+    ) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var staffId by remember { mutableStateOf("TCH-2025-0${(10..99).random()}") }
+    var email by remember { mutableStateOf("") }
+    var passcode by remember { mutableStateOf("teach${(100..999).random()}") }
+    var assignedClass by remember { mutableStateOf("SS 2 Gold") }
+    var assignedSubjects by remember { mutableStateOf("Mathematics, Further Math") }
+    var phone by remember { mutableStateOf("") }
+    var qualification by remember { mutableStateOf("B.Sc (Ed) / PGDE") }
+    var gender by remember { mutableStateOf("Male") }
+    var showPasskey by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Rounded.PersonAdd, contentDescription = null, tint = PrimaryLight)
+                Text("Register Teacher & Set Passkey", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Text(
+                        text = "Create a teacher profile with a unique login passkey for secure portal access.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = {
+                            name = it
+                            if (email.isBlank() && it.isNotBlank()) {
+                                email = "${it.trim().lowercase().replace(" ", ".")}@school.edu.ng"
+                            }
+                        },
+                        label = { Text("Teacher Full Name (e.g. Dr. Jane Okonkwo)") },
+                        leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("register_teacher_name_input")
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = staffId,
+                        onValueChange = { staffId = it },
+                        label = { Text("Staff ID / Number") },
+                        leadingIcon = { Icon(Icons.Rounded.Badge, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("register_teacher_id_input")
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Login Email Address") },
+                        leadingIcon = { Icon(Icons.Rounded.Email, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("register_teacher_email_input")
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = passcode,
+                        onValueChange = { passcode = it },
+                        label = { Text("Teacher Login Passkey / PIN") },
+                        supportingText = { Text("Unique passkey the teacher will use to sign in") },
+                        leadingIcon = { Icon(Icons.Rounded.VpnKey, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { passcode = "teach${(100..999).random()}" }) {
+                                Icon(Icons.Rounded.Refresh, contentDescription = "Generate New Passkey")
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("register_teacher_passcode_input")
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = assignedSubjects,
+                        onValueChange = { assignedSubjects = it },
+                        label = { Text("Assigned Subjects (e.g. Chemistry, Physics)") },
+                        leadingIcon = { Icon(Icons.Rounded.Subject, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = assignedClass,
+                        onValueChange = { assignedClass = it },
+                        label = { Text("Assigned Class Arm (e.g. SS 2 Gold)") },
+                        leadingIcon = { Icon(Icons.Rounded.MeetingRoom, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = phone,
+                        onValueChange = { phone = it },
+                        label = { Text("Phone Number (Optional)") },
+                        leadingIcon = { Icon(Icons.Rounded.Phone, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = qualification,
+                        onValueChange = { qualification = it },
+                        label = { Text("Highest Qualification (e.g. B.Ed, M.Sc)") },
+                        leadingIcon = { Icon(Icons.Rounded.School, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    Text("Gender:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        listOf("Male", "Female").forEach { g ->
+                            FilterChip(
+                                selected = gender == g,
+                                onClick = { gender = g },
+                                label = { Text(g) }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank() && email.isNotBlank() && passcode.isNotBlank()) {
+                        onConfirm(name, staffId, email, passcode, assignedClass, assignedSubjects, phone, qualification, gender)
+                    }
+                },
+                modifier = Modifier.testTag("submit_register_teacher_button")
+            ) {
+                Text("Register Teacher")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable

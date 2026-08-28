@@ -47,6 +47,8 @@ fun ParentPortalScreen(
     val studentGrades = allGrades.filter { it.studentId == studentId }
     val studentReportCard = allReportCards.find { it.studentId == studentId } ?: allReportCards.firstOrNull()
 
+    val currentUser by viewModel.currentUser.collectAsState()
+
     Column(modifier = modifier.fillMaxSize()) {
         // Parent Navigation Tabs
         ScrollableTabRow(
@@ -54,6 +56,7 @@ fun ParentPortalScreen(
                 PortalTab.PARENT_CHILD_OVERVIEW -> 0
                 PortalTab.PARENT_REPORT_CARD -> 1
                 PortalTab.PARENT_ANNOUNCEMENTS -> 2
+                PortalTab.PARENT_AI_ASSISTANT -> 3
                 else -> 0
             },
             edgePadding = 16.dp,
@@ -77,6 +80,12 @@ fun ParentPortalScreen(
                 onClick = { viewModel.selectTab(PortalTab.PARENT_ANNOUNCEMENTS) },
                 text = { Text("PTA & School Notices", fontWeight = FontWeight.SemiBold) },
                 icon = { Icon(Icons.Rounded.Campaign, contentDescription = null) }
+            )
+            Tab(
+                selected = currentTab == PortalTab.PARENT_AI_ASSISTANT,
+                onClick = { viewModel.selectTab(PortalTab.PARENT_AI_ASSISTANT) },
+                text = { Text("Parent AI Advisor", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null) }
             )
         }
 
@@ -113,6 +122,13 @@ fun ParentPortalScreen(
                         AnnouncementCard(announcement = ann)
                     }
                 }
+            }
+            PortalTab.PARENT_AI_ASSISTANT -> {
+                RoleAiAssistantScreen(
+                    viewModel = viewModel,
+                    currentUser = currentUser,
+                    currentRole = com.example.data.model.SchoolRole.PARENT
+                )
             }
             else -> {}
         }

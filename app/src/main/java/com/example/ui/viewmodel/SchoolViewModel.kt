@@ -55,6 +55,7 @@ enum class PortalTab {
     PARENT_CHILD_OVERVIEW,
     PARENT_REPORT_CARD,
     PARENT_ANNOUNCEMENTS,
+    PARENT_AI_ASSISTANT,
     PARENT_CONTACT
 }
 
@@ -1560,6 +1561,66 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             repository.deleteUser(user)
             setFeedbackMessage("Student '${user.name}' removed from class register.")
+        }
+    }
+
+    // --- Teacher Registration & Faculty Management (Admin Portal) ---
+    fun registerTeacher(
+        name: String,
+        staffId: String,
+        email: String,
+        passcode: String,
+        assignedClass: String = "",
+        assignedSubjects: String = "",
+        phone: String = "",
+        qualification: String = "",
+        gender: String = "Male",
+        photoUri: String? = null,
+        avatarColorHex: String = "#0F766E"
+    ) {
+        if (name.isBlank() || email.isBlank() || passcode.isBlank()) {
+            setFeedbackMessage("Please provide Teacher Name, Email, and Login Passkey.")
+            return
+        }
+
+        viewModelScope.launch {
+            val formattedStaffId = if (staffId.isNotBlank()) {
+                if (staffId.startsWith("TCH-") || staffId.startsWith("STAFF-")) staffId.trim() else "TCH-${staffId.trim()}"
+            } else {
+                "TCH-2025-0${(10..99).random()}"
+            }
+
+            val teacherUser = SchoolUser(
+                id = formattedStaffId,
+                name = name.trim(),
+                role = SchoolRole.TEACHER,
+                email = email.trim(),
+                phone = phone.trim(),
+                passcode = passcode.trim(),
+                className = assignedClass.trim(),
+                assignedSubjects = assignedSubjects.trim(),
+                avatarColorHex = avatarColorHex,
+                photoUri = photoUri,
+                gender = gender,
+                admissionDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            )
+
+            repository.saveUser(teacherUser)
+            setFeedbackMessage("Teacher '${name.trim()}' registered successfully with Staff ID $formattedStaffId and Login Passkey!")
+        }
+    }
+
+    fun updateTeacherProfile(teacher: SchoolUser) {
+        viewModelScope.launch {
+            repository.updateUser(teacher)
+            setFeedbackMessage("Teacher profile for '${teacher.name}' updated successfully.")
+        }
+    }
+
+    fun deleteTeacherProfile(teacher: SchoolUser) {
+        viewModelScope.launch {
+            repository.deleteUser(teacher)
+            setFeedbackMessage("Teacher '${teacher.name}' (ID: ${teacher.id}) removed from faculty.")
         }
     }
 
