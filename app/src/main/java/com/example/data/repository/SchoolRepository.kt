@@ -7,9 +7,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
 class SchoolRepository(
-    private val dao: SchoolDao,
-    private val firestoreService: FirestoreSchoolService = FirestoreSchoolService()
+    val dao: SchoolDao,
+    val firestoreService: FirestoreSchoolService = FirestoreSchoolService()
 ) {
+
+    suspend fun saveSchoolProfile(profile: SchoolProfile) {
+        dao.insertSchoolProfile(profile)
+        firestoreService.saveSchoolProfile(profile, profile.schoolCode)
+    }
 
     // --- Users & Auth ---
     val allUsers: Flow<List<SchoolUser>> = dao.getAllUsers()
@@ -528,4 +533,43 @@ class SchoolRepository(
         dao.deleteChatMessage(messageId)
         firestoreService.deleteChatMessage(messageId, schoolId)
     }
+
+    // --- Pull School Data from Cloud (Multi-Tenant Cross-Device Sync) ---
+    suspend fun pullSchoolDataFromFirestore(schoolId: String): Boolean {
+        return try {
+            val profile = firestoreService.getSchoolProfileOnce(schoolId)
+            if (profile != null) {
+                dao.insertSchoolProfile(profile)
+            }
+
+            val users = firestoreService.fetchAllUsersForSchool(schoolId)
+            if (users.isNotEmpty()) {
+                dao.insertUsers(users)
+            }
+
+            val classes = firestoreService.fetchAllClassesForSchool(schoolId)
+            if (classes.isNotEmpty()) {
+                dao.insertClasses(classes)
+            }
+
+            val subjects = firestoreService.fetchAllSubjectsForSchool(schoolId)
+            if (subjects.isNotEmpty()) {
+                dao.insertSubjects(subjects)
+            }
+
+            val exams = firestoreService.fetchAllExamsForSchool(schoolId)
+            if (exams.isNotEmpty()) {
+                exams.forEach { dao.insertCbtExam(it) }
+            }
+
+            val announcements = firestoreService.fetchAllAnnouncementsForSchool(schoolId)
+            if (announcements.isNotEmpty()) {
+                announcements.forEach { dao.insertAnnouncement(it) }
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
 }
+

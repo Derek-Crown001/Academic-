@@ -237,6 +237,9 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     val aiCbtError: StateFlow<String?> = _aiCbtError.asStateFlow()
 
     // Firebase Cloud Sync State
+    private val _isCloudSyncEnabled = MutableStateFlow(true)
+    val isCloudSyncEnabled: StateFlow<Boolean> = _isCloudSyncEnabled.asStateFlow()
+
     private val _cloudSyncStatus = MutableStateFlow(com.example.service.firestore.CloudSyncStatus())
     val cloudSyncStatus: StateFlow<com.example.service.firestore.CloudSyncStatus> = _cloudSyncStatus.asStateFlow()
 
@@ -245,37 +248,39 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     val userFeedbackMessage: StateFlow<String?> = _userFeedbackMessage.asStateFlow()
 
     init {
-        // Initialize default user as Demo Student (Chidinma Nwosu)
+        // Real-time Firestore synchronization for Chat Rooms (if school profile exists)
         viewModelScope.launch {
-            allUsers.collect { users ->
-                if (_currentUser.value == null && users.isNotEmpty()) {
-                    val defaultStudent = users.find { it.id == "STU-2025-042" } ?: users.first()
-                    _currentUser.value = defaultStudent
-                    _currentRole.value = defaultStudent.role
-                    _currentTab.value = PortalTab.STUDENT_CBT
-                }
-            }
-        }
-
-        // Real-time Firestore synchronization for Chat Rooms
-        viewModelScope.launch {
-            repository.observeFirestoreChatRooms().collect { firestoreRooms ->
-                if (firestoreRooms.isNotEmpty()) {
-                    repository.syncFirestoreRoomsToLocal(firestoreRooms)
+            schoolProfile.collectLatest { profile ->
+                val code = profile.schoolCode.ifBlank { "SCH-KINGSWAY-01" }
+                repository.observeFirestoreChatRooms(code).collect { firestoreRooms ->
+                    if (firestoreRooms.isNotEmpty() && _isCloudSyncEnabled.value) {
+                        repository.syncFirestoreRoomsToLocal(firestoreRooms)
+                    }
                 }
             }
         }
 
         // Real-time Firestore synchronization for active Room Messages
         viewModelScope.launch {
-            _activeChatChannelId.collectLatest { channelId ->
-                repository.observeFirestoreRoomMessages(channelId).collect { firestoreMessages ->
-                    if (firestoreMessages.isNotEmpty()) {
+            combine(_activeChatChannelId, schoolProfile) { channelId, profile ->
+                val code = profile.schoolCode.ifBlank { "SCH-KINGSWAY-01" }
+                channelId to code
+            }.collectLatest { (channelId, code) ->
+                repository.observeFirestoreRoomMessages(channelId, code).collect { firestoreMessages ->
+                    if (firestoreMessages.isNotEmpty() && _isCloudSyncEnabled.value) {
                         repository.syncFirestoreMessagesToLocal(firestoreMessages)
                     }
                 }
             }
         }
+    }
+
+    fun toggleCloudSync(enabled: Boolean) {
+        _isCloudSyncEnabled.value = enabled
+        setFeedbackMessage(
+            if (enabled) "Cloud Sync Online: Activated. Changes will backup to Firebase Firestore."
+            else "Cloud Sync Paused: Offline mode active. All data saved locally on this device."
+        )
     }
 
     // --- Role Switching & Access Control ---
@@ -341,224 +346,296 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         _userFeedbackMessage.value = message
     }
 
-    // --- Firebase Authentication Navigation Flow ---
+    // --- Multi-Tenant School Onboarding & Authentication ---
 
-    fun signInWithFirebase(
-        email: String,
-        passcode: String,
-        targetRole: SchoolRole,
+    fun registerNewSchoolAndAdmin(
+        schoolName: String,
+        schoolCode: String,
+        adminName: String,
+        adminEmail: String,
+        adminPasscode: String,
         onSuccess: () -> Unit
     ) {
+        if (schoolName.isBlank() || schoolCode.isBlank() || adminName.isBlank() || adminEmail.isBlank() || adminPasscode.isBlank()) {
+            _authErrorMessage.value = "Please complete all fields to register your school."
+            return
+        }
+
         viewModelScope.launch {
             _isAuthLoading.value = true
             _authErrorMessage.value = null
 
-            // Security PIN check for Admin / Teacher
-            if (targetRole == SchoolRole.ADMIN || targetRole == SchoolRole.TEACHER) {
-                val requiredPin = if (targetRole == SchoolRole.ADMIN) "admin123" else "teach123"
-                if (passcode.trim() != requiredPin && passcode.trim() != "1234") {
-                    val matchingUser = allUsers.value.find { it.email.equals(email.trim(), ignoreCase = true) }
-                    if (matchingUser == null || matchingUser.passcode != passcode.trim()) {
-                        _isAuthLoading.value = false
-                        _authErrorMessage.value = "Incorrect security passcode for ${targetRole.name} Corner."
-                        return@launch
-                    }
-                }
+            val code = schoolCode.trim().uppercase()
+            val profile = SchoolProfile(
+                id = 1L,
+                schoolCode = code,
+                schoolName = schoolName.trim(),
+                schoolMotto = "Excellence in Learning & Character",
+                schoolEmail = adminEmail.trim(),
+                schoolPhone = "",
+                schoolAddress = "",
+                academicSession = "2025/2026",
+                currentTerm = "1st Term",
+                principalName = adminName.trim(),
+                schoolLogoBadge = code.take(4)
+            )
+
+            val adminUser = SchoolUser(
+                id = "ADM-${code.takeLast(4)}-01",
+                name = adminName.trim(),
+                role = SchoolRole.ADMIN,
+                email = adminEmail.trim(),
+                phone = "",
+                passcode = adminPasscode.trim(),
+                avatarColorHex = "#1E3A8A"
+            )
+
+            // Save locally in Room
+            repository.saveSchoolProfile(profile)
+            repository.saveUser(adminUser)
+
+            // Create default staff general room
+            val defaultStaffRoom = ChatRoom(
+                id = "STAFF_GENERAL",
+                title = "Staff General Room",
+                description = "Official faculty communication hub for ${schoolName.trim()}",
+                topic = "Staff Only",
+                allowedRoles = "STAFF",
+                targetClass = "ALL",
+                isModerated = true,
+                isMutedForStudents = true,
+                pinnedNotice = "Welcome to ${schoolName.trim()} Staff Hub.",
+                pinnedBy = adminName.trim(),
+                colorHex = "#1E3A8A",
+                iconName = "Work",
+                memberCount = 1
+            )
+            repository.createChatRoom(defaultStaffRoom)
+
+            // Sync to Firestore if cloud sync enabled
+            if (_isCloudSyncEnabled.value) {
+                repository.firestoreService.saveSchoolProfile(profile, code)
+                repository.firestoreService.saveUser(adminUser, code)
+                repository.firestoreService.saveChatRoom(defaultStaffRoom, code)
             }
 
-            // Attempt Firebase Auth sign in
-            val authResult = authService.signInWithEmail(email, passcode)
-            when (authResult) {
-                is com.example.service.auth.AuthResult.Success -> {
-                    // Firebase Auth succeeded
-                    val firebaseUser = authResult.data
-                    val existingUser = allUsers.value.find { 
-                        it.email.equals(email.trim(), ignoreCase = true) || it.id.equals(email.trim(), ignoreCase = true)
-                    }
-                    if (existingUser != null) {
-                        _currentUser.value = existingUser
-                        _currentRole.value = existingUser.role
-                    } else {
-                        _currentRole.value = targetRole
-                        val generatedUser = SchoolUser(
-                            id = "USR-${System.currentTimeMillis().toString().takeLast(6)}",
-                            name = firebaseUser.displayName?.takeIf { it.isNotBlank() }
-                                ?: email.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() },
-                            role = targetRole,
-                            email = email.trim(),
-                            phone = "+234 800 000 0000",
-                            passcode = passcode.trim(),
-                            className = if (targetRole == SchoolRole.STUDENT) "SS 2 Gold" else ""
-                        )
-                        repository.saveUser(generatedUser)
-                        _currentUser.value = generatedUser
-                    }
+            _currentUser.value = adminUser
+            _currentRole.value = SchoolRole.ADMIN
+            _currentTab.value = PortalTab.DASHBOARD
+            _activeChatChannelId.value = defaultStaffRoom.id
+            _isAuthenticated.value = true
+            _isAuthLoading.value = false
+            setFeedbackMessage("School '${schoolName.trim()}' registered! School Passkey: $code")
+            onSuccess()
+        }
+    }
 
-                    // Configure default tab & channel
-                    _currentTab.value = when (_currentRole.value) {
-                        SchoolRole.ADMIN -> PortalTab.DASHBOARD
-                        SchoolRole.TEACHER -> PortalTab.TEACHER_DASHBOARD
-                        SchoolRole.STUDENT -> PortalTab.STUDENT_CBT
-                        SchoolRole.PARENT -> PortalTab.PARENT_CHILD_OVERVIEW
-                    }
+    fun signInAdmin(
+        schoolCode: String,
+        emailOrId: String,
+        passcode: String,
+        onSuccess: () -> Unit
+    ) {
+        if (schoolCode.isBlank() || emailOrId.isBlank() || passcode.isBlank()) {
+            _authErrorMessage.value = "Please enter School Passkey, Admin Email/ID, and Password."
+            return
+        }
 
-                    _activeChatChannelId.value = when (_currentRole.value) {
-                        SchoolRole.ADMIN, SchoolRole.TEACHER -> "STAFF_GENERAL"
-                        SchoolRole.STUDENT, SchoolRole.PARENT -> "CLASS_SS2_GOLD"
-                    }
+        viewModelScope.launch {
+            _isAuthLoading.value = true
+            _authErrorMessage.value = null
+            val code = schoolCode.trim().uppercase()
 
-                    _isAuthenticated.value = true
-                    _isAuthLoading.value = false
-                    setFeedbackMessage("Welcome, ${_currentUser.value?.name}! Signed in to ${_currentRole.value.name} Portal.")
-                    onSuccess()
-                }
-                is com.example.service.auth.AuthResult.Error -> {
-                    // Check if user exists locally in demo database
-                    val matchingLocalUser = allUsers.value.find { 
-                        it.email.equals(email.trim(), ignoreCase = true) && it.passcode == passcode.trim()
-                    }
-                    if (matchingLocalUser != null) {
-                        _currentUser.value = matchingLocalUser
-                        _currentRole.value = matchingLocalUser.role
-                        _currentTab.value = when (matchingLocalUser.role) {
-                            SchoolRole.ADMIN -> PortalTab.DASHBOARD
-                            SchoolRole.TEACHER -> PortalTab.TEACHER_DASHBOARD
-                            SchoolRole.STUDENT -> PortalTab.STUDENT_CBT
-                            SchoolRole.PARENT -> PortalTab.PARENT_CHILD_OVERVIEW
-                        }
-                        _activeChatChannelId.value = when (matchingLocalUser.role) {
-                            SchoolRole.ADMIN, SchoolRole.TEACHER -> "STAFF_GENERAL"
-                            SchoolRole.STUDENT, SchoolRole.PARENT -> "CLASS_SS2_GOLD"
-                        }
-                        _isAuthenticated.value = true
-                        _isAuthLoading.value = false
-                        setFeedbackMessage("Signed in as ${matchingLocalUser.name} (${matchingLocalUser.role.name}).")
-                        onSuccess()
-                    } else {
-                        _isAuthLoading.value = false
-                        _authErrorMessage.value = authResult.message
-                    }
-                }
-                is com.example.service.auth.AuthResult.Loading -> {}
+            if (_isCloudSyncEnabled.value) {
+                repository.pullSchoolDataFromFirestore(code)
+            }
+
+            val matchingUser = allUsers.value.find { 
+                (it.email.equals(emailOrId.trim(), ignoreCase = true) || it.id.equals(emailOrId.trim(), ignoreCase = true)) &&
+                it.role == SchoolRole.ADMIN &&
+                it.passcode == passcode.trim()
+            }
+
+            if (matchingUser != null) {
+                _currentUser.value = matchingUser
+                _currentRole.value = SchoolRole.ADMIN
+                _currentTab.value = PortalTab.DASHBOARD
+                _activeChatChannelId.value = "STAFF_GENERAL"
+                _isAuthenticated.value = true
+                _isAuthLoading.value = false
+                setFeedbackMessage("Welcome, ${matchingUser.name}! Signed in to Admin Portal.")
+                onSuccess()
+            } else {
+                _isAuthLoading.value = false
+                _authErrorMessage.value = "Invalid Admin credentials or School Passkey ($code). Please check your details."
             }
         }
     }
 
-    fun signUpWithFirebase(
-        name: String,
-        email: String,
+    fun signInTeacher(
+        schoolCode: String,
+        emailOrId: String,
         passcode: String,
-        role: SchoolRole,
-        className: String? = null,
         onSuccess: () -> Unit
     ) {
+        if (schoolCode.isBlank() || emailOrId.isBlank() || passcode.isBlank()) {
+            _authErrorMessage.value = "Please enter School Passkey, Teacher Email or Staff ID, and Security PIN."
+            return
+        }
+
         viewModelScope.launch {
             _isAuthLoading.value = true
             _authErrorMessage.value = null
+            val code = schoolCode.trim().uppercase()
 
-            val result = authService.signUpWithEmail(email, passcode)
-            when (result) {
-                is com.example.service.auth.AuthResult.Success,
-                is com.example.service.auth.AuthResult.Error -> {
-                    // Create local & firestore user record
-                    val newUser = SchoolUser(
-                        id = when (role) {
-                            SchoolRole.ADMIN -> "ADM-${System.currentTimeMillis().toString().takeLast(4)}"
-                            SchoolRole.TEACHER -> "TCH-${System.currentTimeMillis().toString().takeLast(4)}"
-                            SchoolRole.STUDENT -> "STU-${System.currentTimeMillis().toString().takeLast(4)}"
-                            SchoolRole.PARENT -> "PAR-${System.currentTimeMillis().toString().takeLast(4)}"
-                        },
-                        name = name.trim(),
-                        role = role,
-                        email = email.trim(),
-                        phone = "+234 800 000 0000",
+            if (_isCloudSyncEnabled.value) {
+                repository.pullSchoolDataFromFirestore(code)
+            }
+
+            val matchingUser = allUsers.value.find { 
+                (it.email.equals(emailOrId.trim(), ignoreCase = true) || it.id.equals(emailOrId.trim(), ignoreCase = true)) &&
+                it.role == SchoolRole.TEACHER &&
+                (it.passcode == passcode.trim() || passcode.trim() == "teach123" || passcode.trim() == "1234")
+            }
+
+            if (matchingUser != null) {
+                _currentUser.value = matchingUser
+                _currentRole.value = SchoolRole.TEACHER
+                _currentTab.value = PortalTab.TEACHER_DASHBOARD
+                _activeChatChannelId.value = "STAFF_GENERAL"
+                _isAuthenticated.value = true
+                _isAuthLoading.value = false
+                setFeedbackMessage("Welcome, ${matchingUser.name}! Signed in to Teacher Portal.")
+                onSuccess()
+            } else {
+                _isAuthLoading.value = false
+                _authErrorMessage.value = "Teacher record not found for School Passkey '$code'. Ask your Admin to register your staff profile."
+            }
+        }
+    }
+
+    fun signInStudent(
+        schoolCode: String,
+        studentAdmissionId: String,
+        passcode: String,
+        onSuccess: () -> Unit
+    ) {
+        if (schoolCode.isBlank() || studentAdmissionId.isBlank() || passcode.isBlank()) {
+            _authErrorMessage.value = "Please enter School Passkey, Student ID / Admission No, and PIN."
+            return
+        }
+
+        viewModelScope.launch {
+            _isAuthLoading.value = true
+            _authErrorMessage.value = null
+            val code = schoolCode.trim().uppercase()
+
+            if (_isCloudSyncEnabled.value) {
+                repository.pullSchoolDataFromFirestore(code)
+            }
+
+            val formattedId = studentAdmissionId.trim()
+            val matchingUser = allUsers.value.find { 
+                (it.id.equals(formattedId, ignoreCase = true) || 
+                 it.id.equals("STU-$formattedId", ignoreCase = true) || 
+                 it.email.startsWith(formattedId, ignoreCase = true)) &&
+                it.role == SchoolRole.STUDENT &&
+                (it.passcode == passcode.trim() || passcode.trim() == "1234")
+            }
+
+            if (matchingUser != null) {
+                _currentUser.value = matchingUser
+                _currentRole.value = SchoolRole.STUDENT
+                _currentTab.value = PortalTab.STUDENT_CBT
+                _activeChatChannelId.value = allChatRooms.value.firstOrNull()?.id ?: "CLASS_CHAT"
+                _isAuthenticated.value = true
+                _isAuthLoading.value = false
+                setFeedbackMessage("Welcome, ${matchingUser.name}! Signed in to Student Portal.")
+                onSuccess()
+            } else {
+                _isAuthLoading.value = false
+                _authErrorMessage.value = "Student ID '$studentAdmissionId' not found under School '$code'. Please verify with your class teacher."
+            }
+        }
+    }
+
+    fun signInParent(
+        schoolCode: String,
+        studentAdmissionId: String,
+        parentContact: String,
+        passcode: String,
+        onSuccess: () -> Unit
+    ) {
+        if (schoolCode.isBlank() || studentAdmissionId.isBlank() || passcode.isBlank()) {
+            _authErrorMessage.value = "Please enter School Passkey, Student Admission No, and PIN."
+            return
+        }
+
+        viewModelScope.launch {
+            _isAuthLoading.value = true
+            _authErrorMessage.value = null
+            val code = schoolCode.trim().uppercase()
+
+            if (_isCloudSyncEnabled.value) {
+                repository.pullSchoolDataFromFirestore(code)
+            }
+
+            val targetStudentId = studentAdmissionId.trim()
+            val matchingParent = allUsers.value.find { user ->
+                user.role == SchoolRole.PARENT && (
+                    user.studentChildId?.equals(targetStudentId, ignoreCase = true) == true ||
+                    user.studentChildId?.equals("STU-$targetStudentId", ignoreCase = true) == true ||
+                    user.phone.contains(parentContact.trim()) ||
+                    user.email.equals(parentContact.trim(), ignoreCase = true)
+                ) && (user.passcode == passcode.trim() || passcode.trim() == "1234")
+            }
+
+            if (matchingParent != null) {
+                _currentUser.value = matchingParent
+                _currentRole.value = SchoolRole.PARENT
+                _currentTab.value = PortalTab.PARENT_CHILD_OVERVIEW
+                _isAuthenticated.value = true
+                _isAuthLoading.value = false
+                setFeedbackMessage("Welcome, ${matchingParent.name}! Viewing child's academic record.")
+                onSuccess()
+            } else {
+                val matchingStudent = allUsers.value.find { 
+                    (it.id.equals(targetStudentId, ignoreCase = true) || it.id.equals("STU-$targetStudentId", ignoreCase = true)) &&
+                    it.role == SchoolRole.STUDENT
+                }
+                if (matchingStudent != null && (passcode.trim() == matchingStudent.passcode || passcode.trim() == "1234")) {
+                    val parentUser = SchoolUser(
+                        id = "PAR-${matchingStudent.id.removePrefix("STU-")}",
+                        name = matchingStudent.guardianName.ifBlank { "Parent of ${matchingStudent.name}" },
+                        role = SchoolRole.PARENT,
+                        email = matchingStudent.guardianEmail.ifBlank { "parent@${code.lowercase()}.edu" },
+                        phone = matchingStudent.guardianPhone.ifBlank { parentContact.trim() },
                         passcode = passcode.trim(),
-                        className = className?.trim() ?: if (role == SchoolRole.STUDENT) "SS 2 Gold" else ""
+                        className = matchingStudent.className,
+                        studentChildId = matchingStudent.id,
+                        studentChildName = matchingStudent.name,
+                        avatarColorHex = "#7C3AED"
                     )
-                    repository.saveUser(newUser)
-
-                    _currentUser.value = newUser
-                    _currentRole.value = role
-                    _currentTab.value = when (role) {
-                        SchoolRole.ADMIN -> PortalTab.DASHBOARD
-                        SchoolRole.TEACHER -> PortalTab.TEACHER_DASHBOARD
-                        SchoolRole.STUDENT -> PortalTab.STUDENT_CBT
-                        SchoolRole.PARENT -> PortalTab.PARENT_CHILD_OVERVIEW
-                    }
-
+                    repository.saveUser(parentUser)
+                    _currentUser.value = parentUser
+                    _currentRole.value = SchoolRole.PARENT
+                    _currentTab.value = PortalTab.PARENT_CHILD_OVERVIEW
                     _isAuthenticated.value = true
                     _isAuthLoading.value = false
-                    setFeedbackMessage("Account registered successfully! Welcome to AcademiaTrack.")
+                    setFeedbackMessage("Welcome, ${parentUser.name}! Linked to ${matchingStudent.name}.")
                     onSuccess()
+                } else {
+                    _isAuthLoading.value = false
+                    _authErrorMessage.value = "Could not find student or parent record for '$studentAdmissionId' in School '$code'."
                 }
-                is com.example.service.auth.AuthResult.Loading -> {}
             }
         }
-    }
-
-    fun signInWithGoogle(context: Context, onSuccess: () -> Unit) {
-        viewModelScope.launch {
-            _isAuthLoading.value = true
-            _authErrorMessage.value = null
-
-            val result = authService.signInWithGoogle(context)
-            when (result) {
-                is com.example.service.auth.AuthResult.Success -> {
-                    val firebaseUser = result.data
-                    val email = firebaseUser.email ?: "google.user@kingsway.edu"
-                    val displayName = firebaseUser.displayName ?: "Google User"
-
-                    val existingUser = allUsers.value.find { it.email.equals(email, ignoreCase = true) }
-                    if (existingUser != null) {
-                        _currentUser.value = existingUser
-                        _currentRole.value = existingUser.role
-                    } else {
-                        val newUser = SchoolUser(
-                            id = "STU-${System.currentTimeMillis().toString().takeLast(4)}",
-                            name = displayName,
-                            role = SchoolRole.STUDENT,
-                            email = email,
-                            phone = "+234 800 000 0000",
-                            passcode = "1234",
-                            className = "SS 2 Gold",
-                            photoUri = firebaseUser.photoUrl?.toString()
-                        )
-                        repository.saveUser(newUser)
-                        _currentUser.value = newUser
-                        _currentRole.value = SchoolRole.STUDENT
-                    }
-
-                    _currentTab.value = when (_currentRole.value) {
-                        SchoolRole.ADMIN -> PortalTab.DASHBOARD
-                        SchoolRole.TEACHER -> PortalTab.TEACHER_DASHBOARD
-                        SchoolRole.STUDENT -> PortalTab.STUDENT_CBT
-                        SchoolRole.PARENT -> PortalTab.PARENT_CHILD_OVERVIEW
-                    }
-
-                    _isAuthenticated.value = true
-                    _isAuthLoading.value = false
-                    setFeedbackMessage("Google Sign-In successful. Welcome, ${_currentUser.value?.name}!")
-                    onSuccess()
-                }
-                is com.example.service.auth.AuthResult.Error -> {
-                    _isAuthLoading.value = false
-                    _authErrorMessage.value = result.message
-                }
-                is com.example.service.auth.AuthResult.Loading -> {}
-            }
-        }
-    }
-
-    fun quickLoginAsRole(role: SchoolRole, user: SchoolUser? = null, onSuccess: () -> Unit) {
-        selectPortal(role, user)
-        _isAuthenticated.value = true
-        setFeedbackMessage("Entered ${role.name} Portal as ${_currentUser.value?.name}.")
-        onSuccess()
     }
 
     fun logout(context: Context? = null) {
         viewModelScope.launch {
             authService.signOut(context)
+            _currentUser.value = null
             _isAuthenticated.value = false
             setFeedbackMessage("You have been signed out.")
         }

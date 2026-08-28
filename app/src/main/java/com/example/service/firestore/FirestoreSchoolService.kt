@@ -36,6 +36,8 @@ class FirestoreSchoolService {
         private const val COLLECTION_CHAT_MESSAGES = "chat_messages"
         private const val COLLECTION_ATTENDANCE = "attendance"
         private const val COLLECTION_CBT_SUBMISSIONS = "cbt_submissions"
+        private const val COLLECTION_CBT_EXAMS = "cbt_exams"
+        private const val COLLECTION_ANNOUNCEMENTS = "announcements"
     }
 
     private val firestore: FirebaseFirestore? by lazy {
@@ -1001,6 +1003,195 @@ class FirestoreSchoolService {
         } catch (e: Exception) {
             Log.e(TAG, "Error clearing all school activity logs: ${e.message}", e)
             false
+        }
+    }
+
+    // --- Multi-Tenant Cross-Device Pull & Verification Helpers ---
+
+    suspend fun getSchoolProfileOnce(schoolId: String): SchoolProfile? {
+        val schoolDoc = getSchoolDoc(schoolId) ?: return null
+        return try {
+            val doc = schoolDoc.collection(COLLECTION_PROFILES).document("main_profile").get().await()
+            if (doc.exists()) {
+                SchoolProfile(
+                    id = doc.getLong("id") ?: 1L,
+                    schoolCode = doc.getString("schoolCode") ?: schoolId,
+                    schoolName = doc.getString("schoolName") ?: "School",
+                    schoolMotto = doc.getString("schoolMotto") ?: "",
+                    schoolAddress = doc.getString("schoolAddress") ?: "",
+                    schoolEmail = doc.getString("schoolEmail") ?: "",
+                    schoolPhone = doc.getString("schoolPhone") ?: "",
+                    academicSession = doc.getString("academicSession") ?: "2025/2026",
+                    currentTerm = doc.getString("currentTerm") ?: "1st Term",
+                    principalName = doc.getString("principalName") ?: "School Principal",
+                    schoolLogoBadge = doc.getString("schoolLogoBadge") ?: "SCH"
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching school profile: ${e.message}", e)
+            null
+        }
+    }
+
+    suspend fun fetchAllUsersForSchool(schoolId: String): List<SchoolUser> {
+        val schoolDoc = getSchoolDoc(schoolId) ?: return emptyList()
+        return try {
+            val snapshot = schoolDoc.collection(COLLECTION_USERS).get().await()
+            snapshot.documents.mapNotNull { doc ->
+                try {
+                    val id = doc.getString("id") ?: doc.id
+                    val name = doc.getString("name") ?: ""
+                    val roleStr = doc.getString("role") ?: SchoolRole.STUDENT.name
+                    val role = try { SchoolRole.valueOf(roleStr) } catch (e: Exception) { SchoolRole.STUDENT }
+                    val email = doc.getString("email") ?: ""
+                    val phone = doc.getString("phone") ?: ""
+                    val passcode = doc.getString("passcode") ?: "1234"
+                    val className = doc.getString("className") ?: ""
+                    val assignedSubjects = doc.getString("assignedSubjects") ?: ""
+                    val studentChildId = doc.getString("studentChildId")?.takeIf { it.isNotBlank() }
+                    val studentChildName = doc.getString("studentChildName")?.takeIf { it.isNotBlank() }
+                    val avatarColorHex = doc.getString("avatarColorHex") ?: "#1E40AF"
+                    val photoUri = doc.getString("photoUri")?.takeIf { it.isNotBlank() }
+                    val gender = doc.getString("gender") ?: "Female"
+                    val dateOfBirth = doc.getString("dateOfBirth") ?: "2009-05-14"
+                    val guardianName = doc.getString("guardianName") ?: ""
+                    val guardianPhone = doc.getString("guardianPhone") ?: ""
+                    val guardianEmail = doc.getString("guardianEmail") ?: ""
+                    val residentialAddress = doc.getString("residentialAddress") ?: ""
+                    val bloodGroup = doc.getString("bloodGroup") ?: "O+"
+                    val genotype = doc.getString("genotype") ?: "AA"
+                    val admissionDate = doc.getString("admissionDate") ?: "2024-09-10"
+                    val stateOfOrigin = doc.getString("stateOfOrigin") ?: "Lagos"
+
+                    SchoolUser(
+                        id = id,
+                        name = name,
+                        role = role,
+                        email = email,
+                        phone = phone,
+                        passcode = passcode,
+                        className = className,
+                        assignedSubjects = assignedSubjects,
+                        studentChildId = studentChildId,
+                        studentChildName = studentChildName,
+                        avatarColorHex = avatarColorHex,
+                        photoUri = photoUri,
+                        gender = gender,
+                        dateOfBirth = dateOfBirth,
+                        guardianName = guardianName,
+                        guardianPhone = guardianPhone,
+                        guardianEmail = guardianEmail,
+                        residentialAddress = residentialAddress,
+                        bloodGroup = bloodGroup,
+                        genotype = genotype,
+                        admissionDate = admissionDate,
+                        stateOfOrigin = stateOfOrigin
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching school users: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    suspend fun fetchAllClassesForSchool(schoolId: String): List<SchoolClass> {
+        val schoolDoc = getSchoolDoc(schoolId) ?: return emptyList()
+        return try {
+            val snapshot = schoolDoc.collection(COLLECTION_CLASSES).get().await()
+            snapshot.documents.mapNotNull { doc ->
+                try {
+                    SchoolClass(
+                        id = doc.getLong("id") ?: doc.id.toLongOrNull() ?: 0L,
+                        name = doc.getString("name") ?: "",
+                        level = doc.getString("level") ?: "",
+                        arm = doc.getString("arm") ?: "",
+                        classTeacherId = doc.getString("classTeacherId") ?: "",
+                        classTeacherName = doc.getString("classTeacherName") ?: "",
+                        studentCount = doc.getLong("studentCount")?.toInt() ?: 30,
+                        room = doc.getString("room") ?: "Main Block"
+                    )
+                } catch (e: Exception) { null }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun fetchAllSubjectsForSchool(schoolId: String): List<SchoolSubject> {
+        val schoolDoc = getSchoolDoc(schoolId) ?: return emptyList()
+        return try {
+            val snapshot = schoolDoc.collection(COLLECTION_SUBJECTS).get().await()
+            snapshot.documents.mapNotNull { doc ->
+                try {
+                    SchoolSubject(
+                        id = doc.getLong("id") ?: 0L,
+                        name = doc.getString("name") ?: "",
+                        code = doc.getString("code") ?: "",
+                        classLevel = doc.getString("classLevel") ?: "",
+                        teacherId = doc.getString("teacherId") ?: "",
+                        teacherName = doc.getString("teacherName") ?: "",
+                        colorHex = doc.getString("colorHex") ?: "#1E40AF",
+                        periodsPerWeek = doc.getLong("periodsPerWeek")?.toInt() ?: 4
+                    )
+                } catch (e: Exception) { null }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun fetchAllExamsForSchool(schoolId: String): List<CbtExam> {
+        val schoolDoc = getSchoolDoc(schoolId) ?: return emptyList()
+        return try {
+            val snapshot = schoolDoc.collection(COLLECTION_CBT_EXAMS).get().await()
+            snapshot.documents.mapNotNull { doc ->
+                try {
+                    CbtExam(
+                        id = doc.getLong("id") ?: 0L,
+                        title = doc.getString("title") ?: "",
+                        subjectName = doc.getString("subjectName") ?: "",
+                        className = doc.getString("className") ?: "All",
+                        teacherId = doc.getString("teacherId") ?: "",
+                        teacherName = doc.getString("teacherName") ?: "",
+                        examType = doc.getString("examType") ?: "TEST",
+                        durationMinutes = doc.getLong("durationMinutes")?.toInt() ?: 30,
+                        totalMarks = doc.getLong("totalMarks")?.toInt() ?: 20,
+                        passMark = doc.getLong("passMark")?.toInt() ?: 10,
+                        isPublished = doc.getBoolean("isPublished") ?: true,
+                        instructions = doc.getString("instructions") ?: "",
+                        createdDateMillis = doc.getLong("createdDateMillis") ?: System.currentTimeMillis()
+                    )
+                } catch (e: Exception) { null }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun fetchAllAnnouncementsForSchool(schoolId: String): List<SchoolAnnouncement> {
+        val schoolDoc = getSchoolDoc(schoolId) ?: return emptyList()
+        return try {
+            val snapshot = schoolDoc.collection(COLLECTION_ANNOUNCEMENTS).get().await()
+            snapshot.documents.mapNotNull { doc ->
+                try {
+                    SchoolAnnouncement(
+                        id = doc.getLong("id") ?: 0L,
+                        title = doc.getString("title") ?: "",
+                        content = doc.getString("content") ?: "",
+                        targetAudience = doc.getString("targetAudience") ?: "ALL",
+                        senderName = doc.getString("senderName") ?: "Admin",
+                        senderRole = doc.getString("senderRole") ?: "ADMIN",
+                        category = doc.getString("category") ?: "GENERAL",
+                        isUrgent = doc.getBoolean("isUrgent") ?: false,
+                        postedAtMillis = doc.getLong("postedAtMillis") ?: System.currentTimeMillis()
+                    )
+                } catch (e: Exception) { null }
+            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 }
