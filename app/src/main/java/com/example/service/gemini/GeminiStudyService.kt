@@ -2,6 +2,7 @@ package com.example.service.gemini
 
 import com.example.BuildConfig
 import com.example.data.model.SchoolRole
+import com.example.util.AiTextFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -46,12 +47,14 @@ object GeminiStudyService {
         .build()
 
     fun getRoleSystemInstruction(role: SchoolRole, customInstruction: String? = null): String {
-        return customInstruction ?: when (role) {
-            SchoolRole.ADMIN -> "You are AcademiaTrack's AI School Administrator & Principal's Advisor. Assist with formulating official school notices, circular memos, term calendars, policy documents, disciplinary/commendation letters, and staff appraisal summaries. Format with professional executive headings and clear bullet points."
+        val baseInstruction = customInstruction ?: when (role) {
+            SchoolRole.ADMIN -> "You are AcademiaTrack's AI School Administrator & Principal's Advisor. Assist with formulating official school notices, circular memos, term calendars, policy documents, disciplinary/commendation letters, and staff appraisal summaries."
             SchoolRole.TEACHER -> "You are AcademiaTrack's AI Master Educator & Curriculum Specialist. Assist secondary school teachers with generating structured lesson plans (Objectives, Materials, Presentation, Evaluation, Homework), WAEC/NECO-standard multiple-choice CBT questions (with options A, B, C, D, key, and rationale), personalized report card remarks, and remedial worksheets."
             SchoolRole.STUDENT -> "You are AcademiaTrack's 24/7 AI Personal Study Mentor & CBT Tutor. Guide secondary school students step-by-step in Mathematics, Physics, Chemistry, Biology, English, and Economics. Provide intuitive explanations, practice questions with answer breakdowns, essay outlines, and revision timetables. Be inspiring, encouraging, and clear."
             SchoolRole.PARENT -> "You are AcademiaTrack's AI Parent-School Liaison Assistant. Provide parents with actionable guidance on home study support, interpreting terminal report cards, encouraging child academic growth, and formulating inquiries for teachers."
         }
+
+        return "$baseInstruction\n\nCRITICAL FORMATTING MANDATE: Output your entire response in 100% CLEAN PLAIN TEXT. STRICTLY DO NOT USE markdown symbols like ####, ###, ##, #, ***, **, *, ___, __, _, or markdown tables. Use clean line breaks, CAPITALIZED HEADINGS, and simple bullet symbols (•) for lists."
     }
 
     /**
@@ -71,7 +74,7 @@ object GeminiStudyService {
         val lastUserMessage = history.lastOrNull { it.role == "user" }?.text ?: "Hello"
 
         if (apiKey.isNullOrBlank() || apiKey == "MY_GEMINI_API_KEY") {
-            val offlineText = getSmartOfflineRoleResponse(lastUserMessage, role)
+            val offlineText = AiTextFormatter.toPlainText(getSmartOfflineRoleResponse(lastUserMessage, role))
             val fallbackMessage = GeminiChatMessage(
                 role = "model",
                 text = offlineText,
@@ -128,7 +131,7 @@ object GeminiStudyService {
             val responseBody = response.body?.string() ?: ""
 
             if (!response.isSuccessful) {
-                val offlineText = getSmartOfflineRoleResponse(lastUserMessage, role)
+                val offlineText = AiTextFormatter.toPlainText(getSmartOfflineRoleResponse(lastUserMessage, role))
                 return@withContext Result.success(
                     GeminiChatMessage(
                         role = "model",
@@ -144,7 +147,7 @@ object GeminiStudyService {
             val candidate = candidates?.optJSONObject(0)
             val content = candidate?.optJSONObject("content")
             val parts = content?.optJSONArray("parts")
-            val text = parts?.optJSONObject(0)?.optString("text")
+            val rawText = parts?.optJSONObject(0)?.optString("text")
 
             // Parse Grounding Metadata (Google Search Grounding)
             val groundingMetadata = candidate?.optJSONObject("groundingMetadata")
@@ -175,9 +178,15 @@ object GeminiStudyService {
                 }
             }
 
+            val cleanOutputText = if (!rawText.isNullOrBlank()) {
+                AiTextFormatter.toPlainText(rawText)
+            } else {
+                AiTextFormatter.toPlainText(getSmartOfflineRoleResponse(lastUserMessage, role))
+            }
+
             val finalMessage = GeminiChatMessage(
                 role = "model",
-                text = if (!text.isNullOrBlank()) text else getSmartOfflineRoleResponse(lastUserMessage, role),
+                text = cleanOutputText,
                 modelUsed = targetModel,
                 isSearchGrounded = enableGoogleSearch && (searchSources.isNotEmpty() || searchQueries.isNotEmpty()),
                 searchQueries = searchQueries,
@@ -186,7 +195,7 @@ object GeminiStudyService {
 
             Result.success(finalMessage)
         } catch (e: Exception) {
-            val offlineText = getSmartOfflineRoleResponse(lastUserMessage, role)
+            val offlineText = AiTextFormatter.toPlainText(getSmartOfflineRoleResponse(lastUserMessage, role))
             Result.success(
                 GeminiChatMessage(
                     role = "model",
@@ -210,7 +219,8 @@ object GeminiStudyService {
             enableGoogleSearch = false,
             customInstruction = customInstruction
         )
-        Result.success(chatResult.getOrNull()?.text ?: getSmartOfflineRoleResponse(prompt, role))
+        val text = chatResult.getOrNull()?.text ?: getSmartOfflineRoleResponse(prompt, role)
+        Result.success(AiTextFormatter.toPlainText(text))
     }
 
     suspend fun generateStudyAdvice(
@@ -662,170 +672,170 @@ object GeminiStudyService {
         return when (role) {
             SchoolRole.ADMIN -> when {
                 "circular" in lower || "memo" in lower || "notice" in lower || "parent" in lower -> """
-### 📢 Official School Circular Memo
-**To:** All Esteemed Parents, Guardians & Faculty  
-**From:** The Office of the Principal & School Administration  
-**Subject:** 1st Term Academic Updates, Mid-Term Assessments & Upcoming PTA Forum  
+OFFICIAL SCHOOL CIRCULAR MEMO
+To: All Esteemed Parents, Guardians & Faculty
+From: The Office of the Principal & School Administration
+Subject: 1st Term Academic Updates, Mid-Term Assessments & Upcoming PTA Forum
 
-**Dear Parents and Guardians,**
+Dear Parents and Guardians,
 
 We commend our students for their diligent academic strides this term. Please take note of the following vital school notices:
 
-1. **Continuous Assessment (CA) & CBT Mid-Term:** Commencing on Monday next week. Please ensure wards review their daily class portals and CBT revision practice.
-2. **School Fees Clearance:** Parents with outstanding fee balances are kindly requested to complete settlements to avoid examination seating delays.
-3. **PTA General Assembly:** Scheduled for Saturday at 10:00 AM in the College Auditorium. Terminal report cards and infrastructure upgrades will be reviewed.
+1. Continuous Assessment (CA) & CBT Mid-Term: Commencing on Monday next week. Please ensure wards review their daily class portals and CBT revision practice.
+2. School Fees Clearance: Parents with outstanding fee balances are kindly requested to complete settlements to avoid examination seating delays.
+3. PTA General Assembly: Scheduled for Saturday at 10:00 AM in the College Auditorium. Terminal report cards and infrastructure upgrades will be reviewed.
 
-*Signed:*  
-**Dr. C. Adebayo, Ph.D**  
-*Principal, Kingsway Model College*
+Signed:
+Dr. C. Adebayo, Ph.D
+Principal, Kingsway Model College
                 """.trimIndent()
 
                 "calendar" in lower || "timetable" in lower || "term" in lower -> """
-### 🗓️ Academic Term Calendar & Operations Timetable
-* **Week 1 - 4:** Curriculum Delivery & 1st Continuous Assessment (15 Marks)
-* **Week 5 - 7:** Mid-Term Practical Labs, 2nd CA (15 Marks) & Mid-Term Exam (20 Marks)
-* **Week 8:** Mid-Term Break & Staff Evaluation Forum
-* **Week 9 - 11:** Terminal Revision, CBT Mock Drills & Revision Workshops
-* **Week 12:** Final Terminal Computer-Based Examination (50 Marks)
-* **Week 13:** CA Compilation, Class Teacher Moderation, Admin Sealing & Report Card Release
+ACADEMIC TERM CALENDAR & OPERATIONS TIMETABLE
+• Week 1 - 4: Curriculum Delivery & 1st Continuous Assessment (15 Marks)
+• Week 5 - 7: Mid-Term Practical Labs, 2nd CA (15 Marks) & Mid-Term Exam (20 Marks)
+• Week 8: Mid-Term Break & Staff Evaluation Forum
+• Week 9 - 11: Terminal Revision, CBT Mock Drills & Revision Workshops
+• Week 12: Final Terminal Computer-Based Examination (50 Marks)
+• Week 13: CA Compilation, Class Teacher Moderation, Admin Sealing & Report Card Release
                 """.trimIndent()
 
                 "discipline" in lower || "commendation" in lower || "letter" in lower -> """
-### 📜 Official Student Commendation & Academic Honors Citation
-**Date:** Current Academic Session  
-**Recipient:** Chidinma Nwosu (Adm. No: ADM-SS2-042, SS 2 Gold)  
+OFFICIAL STUDENT COMMENDATION & ACADEMIC HONORS CITATION
+Date: Current Academic Session
+Recipient: Chidinma Nwosu (Adm. No: ADM-SS2-042, SS 2 Gold)
 
-**Citation of Merit:**  
-The Board of Governors and Academic Council proudly confer this **Principal's Certificate of Academic Distinction** upon you for demonstrating outstanding scholarly aptitude, securing 1st Position with an aggregate average of 88.4%, and exemplifying impeccable character. Keep flying the school's banner of excellence high!
+Citation of Merit:
+The Board of Governors and Academic Council proudly confer this Principal's Certificate of Academic Distinction upon you for demonstrating outstanding scholarly aptitude, securing 1st Position with an aggregate average of 88.4%, and exemplifying impeccable character. Keep flying the school's banner of excellence high!
                 """.trimIndent()
 
                 else -> """
-### 🏛️ Executive School Administration Strategy & Metrics
-* **Curriculum Adherence:** Monitor real-time Teacher Register clock-ins and CA gradebook publishing status.
-* **CBT Infrastructure:** Ensure backup power generators and LAN servers are pre-tested before scheduled examinations.
-* **Parental Engagement:** Maintain proactive updates via the announcement board and digital report card approvals.
+EXECUTIVE SCHOOL ADMINISTRATION STRATEGY & METRICS
+• Curriculum Adherence: Monitor real-time Teacher Register clock-ins and CA gradebook publishing status.
+• CBT Infrastructure: Ensure backup power generators and LAN servers are pre-tested before scheduled examinations.
+• Parental Engagement: Maintain proactive updates via the announcement board and digital report card approvals.
                 """.trimIndent()
             }
 
             SchoolRole.TEACHER -> when {
                 "lesson" in lower || "plan" in lower || "note" in lower -> """
-### 📝 Structured Secondary Lesson Plan
-**Subject:** Mathematics / Physics  
-**Class Level:** SS 2 | **Duration:** 45 Minutes  
-**Topic:** Quadratic Equations by Factorization & Graphic Analysis  
+STRUCTURED SECONDARY LESSON PLAN
+Subject: Mathematics / Physics
+Class Level: SS 2 | Duration: 45 Minutes
+Topic: Quadratic Equations by Factorization & Graphic Analysis
 
-#### 🎯 Behavioral Objectives
+BEHAVIORAL OBJECTIVES
 By the end of the lesson, students should be able to:
 1. Identify the standard form of a quadratic equation (ax² + bx + c = 0).
 2. Factorize quadratic expressions where coefficient a = 1 and a > 1.
 3. Solve for real roots accurately and check solutions.
 
-#### 🛠️ Instructional Materials
-* Algebraic tile models, Grid whiteboard, Scientific calculators.
+INSTRUCTIONAL MATERIALS
+• Algebraic tile models, Grid whiteboard, Scientific calculators.
 
-#### 📚 Lesson Presentation Stages
-* **Step 1 (Introduction - 5 mins):** Review linear factoring and perfect squares.
-* **Step 2 (Concept Development - 20 mins):** Demonstrate splitting the middle term (p + q = b, p * q = a * c).
-* **Step 3 (Guided Practice - 10 mins):** Solve 2x² - 5x - 3 = 0 -> (2x+1)(x-3)=0 -> x=3, x=-1/2.
-* **Step 4 (Evaluation - 7 mins):** Students solve 3x² + 7x + 2 = 0 individually in notebooks.
-* **Step 5 (Assignment - 3 mins):** Textbook Exercises 4B, Questions 1 to 10.
+LESSON PRESENTATION STAGES
+• Step 1 (Introduction - 5 mins): Review linear factoring and perfect squares.
+• Step 2 (Concept Development - 20 mins): Demonstrate splitting the middle term (p + q = b, p * q = a * c).
+• Step 3 (Guided Practice - 10 mins): Solve 2x² - 5x - 3 = 0 -> (2x+1)(x-3)=0 -> x=3, x=-1/2.
+• Step 4 (Evaluation - 7 mins): Students solve 3x² + 7x + 2 = 0 individually in notebooks.
+• Step 5 (Assignment - 3 mins): Textbook Exercises 4B, Questions 1 to 10.
                 """.trimIndent()
 
                 "cbt" in lower || "question" in lower || "quiz" in lower -> """
-### 🎯 Curriculum-Aligned CBT Exam Question Bank
+CURRICULUM-ALIGNED CBT EXAM QUESTION BANK
 
-**Q1:** A car accelerates uniformly from rest at 3.0 m/s² for 6 seconds. What is its final velocity?
-* **A:** 9.0 m/s
-* **B:** 18.0 m/s *(Correct Key)*
-* **C:** 54.0 m/s
-* **D:** 12.0 m/s
-* *Explanation:* v = u + at = 0 + (3.0 * 6) = 18.0 m/s.
+Question 1: A car accelerates uniformly from rest at 3.0 m/s² for 6 seconds. What is its final velocity?
+• A: 9.0 m/s
+• B: 18.0 m/s (Correct Key)
+• C: 54.0 m/s
+• D: 12.0 m/s
+Explanation: v = u + at = 0 + (3.0 * 6) = 18.0 m/s.
 
-**Q2:** If log10(x) = 3, find the value of x.
-* **A:** 30
-* **B:** 100
-* **C:** 1000 *(Correct Key)*
-* **D:** 0.001
-* *Explanation:* By logarithmic definition, x = 10³ = 1000.
+Question 2: If log10(x) = 3, find the value of x.
+• A: 30
+• B: 100
+• C: 1000 (Correct Key)
+• D: 0.001
+Explanation: By logarithmic definition, x = 10³ = 1000.
 
-**Q3:** Which organelle is recognized as the powerhouse of the biological cell?
-* **A:** Ribosome
-* **B:** Mitochondrion *(Correct Key)*
-* **C:** Golgi Apparatus
-* **D:** Endoplasmic Reticulum
-* *Explanation:* Mitochondria generate most of the cell's supply of ATP energy.
+Question 3: Which organelle is recognized as the powerhouse of the biological cell?
+• A: Ribosome
+• B: Mitochondrion (Correct Key)
+• C: Golgi Apparatus
+• D: Endoplasmic Reticulum
+Explanation: Mitochondria generate most of the cell's supply of ATP energy.
                 """.trimIndent()
 
                 "remark" in lower || "comment" in lower || "report" in lower -> """
-### ✍️ Personalized Terminal Report Card Remarks
+PERSONALIZED TERMINAL REPORT CARD REMARKS
 
-* **For High Distinction (80% - 100%):**  
-  *"A phenomenal and disciplined student with sharp analytical aptitude. Consistently leads the class with exemplary character and academic excellence."*
+• For High Distinction (80% - 100%):
+  A phenomenal and disciplined student with sharp analytical aptitude. Consistently leads the class with exemplary character and academic excellence.
 
-* **For Strong Performance (65% - 79%):**  
-  *"A very commendable effort with solid mastery across all core subjects. With focused consistency in science subjects, higher laurels are well within reach."*
+• For Strong Performance (65% - 79%):
+  A very commendable effort with solid mastery across all core subjects. With focused consistency in science subjects, higher laurels are well within reach.
 
-* **For Developing Students (50% - 64%):**  
-  *"Shows good potential and willingness to learn. Encouraged to participate more actively in revision sessions and complete weekly CBT practice tests."*
+• For Developing Students (50% - 64%):
+  Shows good potential and willingness to learn. Encouraged to participate more actively in revision sessions and complete weekly CBT practice tests.
                 """.trimIndent()
 
                 else -> """
-### 💡 Teacher Pedagogical Toolkit
-* **Differentiated Learning:** Pair students in peer study groups during challenging calculations.
-* **Formative Assessment:** Use 5-minute exit tickets or mini-CBT quizzes to gauge retention after every lesson.
-* **Active Feedback:** Leverage the CA grading screen to provide constructive remarks before publishing report cards.
+TEACHER PEDAGOGICAL TOOLKIT
+• Differentiated Learning: Pair students in peer study groups during challenging calculations.
+• Formative Assessment: Use 5-minute exit tickets or mini-CBT quizzes to gauge retention after every lesson.
+• Active Feedback: Leverage the CA grading screen to provide constructive remarks before publishing report cards.
                 """.trimIndent()
             }
 
             SchoolRole.STUDENT -> when {
                 "quiz" in lower || "test" in lower || "practice" in lower -> """
-### 🧠 Student CBT Quick Practice Quiz
+STUDENT CBT QUICK PRACTICE QUIZ
 
-1. **Question 1:** Evaluate the derivative of (4x³ - 5x + 7) with respect to x.
-   * *Solution:* Using power rule -> 12x² - 5.
+1. Question 1: Evaluate the derivative of (4x³ - 5x + 7) with respect to x.
+   Solution: Using power rule -> 12x² - 5.
 
-2. **Question 2:** What is the SI unit of Electric Resistance?
-   * *Solution:* Ohm (Ω).
+2. Question 2: What is the SI unit of Electric Resistance?
+   Solution: Ohm (Ω).
 
-3. **Question 3:** Identify the figure of speech in: *"The wind whispered through the dark trees"*.
-   * *Solution:* Personification (giving human traits to inanimate nature).
+3. Question 3: Identify the figure of speech in: "The wind whispered through the dark trees".
+   Solution: Personification (giving human traits to inanimate nature).
                 """.trimIndent()
 
                 "schedule" in lower || "timetable" in lower || "plan" in lower -> """
-### 🗓️ Recommended Daily Student Study Timetable
-* **4:00 PM - 5:15 PM:** Mathematics & Calculation Subjects (Sharp focus while mind is fresh)
-* **5:15 PM - 5:30 PM:** Active Break & Hydration
-* **5:30 PM - 6:45 PM:** Physics / Chemistry Lab Theories & Theorem Proofs
-* **6:45 PM - 7:30 PM:** Dinner & Family Time
-* **7:30 PM - 8:30 PM:** English Language Vocabulary, Lexis & Literature Summaries
-* **8:30 PM - 9:00 PM:** Flashcard Active Recall & Tomorrow's CBT Review
+RECOMMENDED DAILY STUDENT STUDY TIMETABLE
+• 4:00 PM - 5:15 PM: Mathematics & Calculation Subjects (Sharp focus while mind is fresh)
+• 5:15 PM - 5:30 PM: Active Break & Hydration
+• 5:30 PM - 6:45 PM: Physics / Chemistry Lab Theories & Theorem Proofs
+• 6:45 PM - 7:30 PM: Dinner & Family Time
+• 7:30 PM - 8:30 PM: English Language Vocabulary, Lexis & Literature Summaries
+• 8:30 PM - 9:00 PM: Flashcard Active Recall & Tomorrow's CBT Review
                 """.trimIndent()
 
                 "homework" in lower || "math" in lower || "solve" in lower || "explain" in lower -> """
-### 📚 Step-by-Step Problem Solver & Concept Guide
+STEP-BY-STEP PROBLEM SOLVER & CONCEPT GUIDE
 
-**Topic:** Solving Quadratic Equations with the Quadratic Formula
+Topic: Solving Quadratic Equations with the Quadratic Formula
 Formula: x = (-b ± √(b² - 4ac)) / (2a)
 
-1. **Step 1:** Compare your equation with ax² + bx + c = 0 to identify coefficients a, b, and c.
-2. **Step 2:** Calculate the Discriminant Δ = b² - 4ac. If Δ > 0, there are two real distinct roots.
-3. **Step 3:** Substitute into the formula and compute roots for +√Δ and -√Δ.
-4. **Step 4:** Check your answers by substituting roots back into the original equation!
+1. Step 1: Compare your equation with ax² + bx + c = 0 to identify coefficients a, b, and c.
+2. Step 2: Calculate the Discriminant Δ = b² - 4ac. If Δ > 0, there are two real distinct roots.
+3. Step 3: Substitute into the formula and compute roots for +√Δ and -√Δ.
+4. Step 4: Check your answers by substituting roots back into the original equation!
                 """.trimIndent()
 
                 else -> """
-### 🚀 Top Exam Success Strategies
-* **Active Recall over Passive Reading:** Close your notes and write key formulas from memory.
-* **Teach to Master (Feynman Technique):** Explain challenging concepts to your classmate in the Peer Study Room.
-* **Timed CBT Practice:** Take practice tests on AcademiaTrack with the countdown timer to build exam confidence.
+TOP EXAM SUCCESS STRATEGIES
+• Active Recall over Passive Reading: Close your notes and write key formulas from memory.
+• Teach to Master (Feynman Technique): Explain challenging concepts to your classmate in the Peer Study Room.
+• Timed CBT Practice: Take practice tests on AcademiaTrack with the countdown timer to build exam confidence.
                 """.trimIndent()
             }
 
             SchoolRole.PARENT -> """
-### 👨‍👩‍👧 Parent Academic Support & Progress Guide
-* **Review CA Grades:** Check your child's Continuous Assessment scores regularly under the Report Card tab.
-* **Daily Study Routine:** Ensure a quiet, well-lit study environment for 90 minutes each evening.
-* **Open Communication:** Reach out directly to class teachers via the portal if your child needs extra subject reinforcement.
+PARENT ACADEMIC SUPPORT & PROGRESS GUIDE
+• Review CA Grades: Check your child's Continuous Assessment scores regularly under the Report Card tab.
+• Daily Study Routine: Ensure a quiet, well-lit study environment for 90 minutes each evening.
+• Open Communication: Reach out directly to class teachers via the portal if your child needs extra subject reinforcement.
             """.trimIndent()
         }
     }

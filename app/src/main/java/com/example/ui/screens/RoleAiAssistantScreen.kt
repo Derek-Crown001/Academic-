@@ -43,6 +43,7 @@ import com.example.data.model.SchoolRole
 import com.example.data.model.SchoolUser
 import com.example.service.gemini.GeminiChatMessage
 import com.example.service.gemini.GeminiChatModels
+import com.example.util.AiTextFormatter
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.SchoolViewModel
 import java.text.SimpleDateFormat
@@ -513,18 +514,19 @@ fun RoleAiAssistantScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             items(chatHistory, key = { it.id }) { message ->
+                                val cleanMessageText = remember(message.text) { AiTextFormatter.toPlainText(message.text) }
                                 ChatBubbleItem(
                                     message = message,
                                     roleThemeColor = roleThemeColor,
                                     isSpeaking = currentlySpeakingId == message.id,
                                     onToggleSpeak = {
-                                        speakText(message.id, message.text)
+                                        speakText(message.id, cleanMessageText)
                                     },
                                     onCopy = {
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        val clip = ClipData.newPlainText("AI Message", message.text)
+                                        val clip = ClipData.newPlainText("AI Message", cleanMessageText)
                                         clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Copied plain text to clipboard!", Toast.LENGTH_SHORT).show()
                                     },
                                     onOpenUrl = { url ->
                                         try {
@@ -654,7 +656,8 @@ fun LiveVoiceAssistantModal(
         label = "pulse"
     )
 
-    val lastModelMessage = chatHistory.lastOrNull { it.role == "model" }?.text ?: "I am ready. Tap the microphone and ask your question."
+    val rawModelMessage = chatHistory.lastOrNull { it.role == "model" }?.text ?: "I am ready. Tap the microphone and ask your question."
+    val lastModelMessage = remember(rawModelMessage) { AiTextFormatter.toPlainText(rawModelMessage) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -858,8 +861,11 @@ fun ChatBubbleItem(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     SelectionContainer {
+                        val displayContent = remember(message.text) { 
+                            if (!isUser) AiTextFormatter.toPlainText(message.text) else message.text 
+                        }
                         Text(
-                            text = message.text,
+                            text = displayContent,
                             fontSize = 13.sp,
                             lineHeight = 19.sp,
                             color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface

@@ -53,6 +53,31 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SchoolManagementApp(viewModel: SchoolViewModel) {
+    var showSplashScreen by remember { mutableStateOf(true) }
+
+    AnimatedContent(
+        targetState = showSplashScreen,
+        transitionSpec = {
+            fadeIn(animationSpec = androidx.compose.animation.core.tween(500)) togetherWith
+                    fadeOut(animationSpec = androidx.compose.animation.core.tween(500))
+        },
+        label = "splash_screen_transition"
+    ) { isSplash ->
+        if (isSplash) {
+            SplashScreen(
+                onSplashFinished = {
+                    showSplashScreen = false
+                }
+            )
+        } else {
+            SchoolManagementMainContent(viewModel = viewModel)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val isAuthenticated by viewModel.isAuthenticated.collectAsState()
     val currentRole by viewModel.currentRole.collectAsState()
