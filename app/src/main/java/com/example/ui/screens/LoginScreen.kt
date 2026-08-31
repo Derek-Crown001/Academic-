@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +32,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.OwnerConsoleActivity
 import com.example.data.model.SchoolRole
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.SchoolViewModel
@@ -40,6 +43,7 @@ fun LoginScreen(
     viewModel: SchoolViewModel,
     onLoginSuccess: () -> Unit
 ) {
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
     val isAuthLoading by viewModel.isAuthLoading.collectAsState()
@@ -60,6 +64,7 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
 
     val roleThemeColor = when (selectedRole) {
+        SchoolRole.APP_OWNER -> Color(0xFFD97706)
         SchoolRole.ADMIN -> Color(0xFF1E3A8A)
         SchoolRole.TEACHER -> Color(0xFF0F766E)
         SchoolRole.STUDENT -> PrimaryLight
@@ -250,6 +255,77 @@ fun LoginScreen(
                     }
                 }
 
+                // Standalone App Owner Master Console Card
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFD97706)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Security,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "Platform Owner Master App",
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        fontSize = 12.5.sp
+                                    )
+                                    Text(
+                                        text = "Remote School Locking & SaaS Controls",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 10.5.sp
+                                    )
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(context, OwnerConsoleActivity::class.java)
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        viewModel.selectPortal(SchoolRole.APP_OWNER)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("launch_owner_app_from_login_btn")
+                            ) {
+                                Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Open Owner App", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
                 // Error Message Banner
                 if (authError != null) {
                     item {
@@ -312,6 +388,7 @@ fun LoginScreen(
                             ) {
                                 Text(
                                     text = when (selectedRole) {
+                                        SchoolRole.APP_OWNER -> "App Owner Platform Console"
                                         SchoolRole.ADMIN -> if (isAdminRegisterMode) "Register New School & Admin" else "School Administrator Login"
                                         SchoolRole.TEACHER -> "Teacher Portal Access"
                                         SchoolRole.STUDENT -> "Student Portal Access"
@@ -346,6 +423,7 @@ fun LoginScreen(
                             ) {
                                 Text(
                                     text = when (selectedRole) {
+                                        SchoolRole.APP_OWNER -> "Master Super-Admin Access. Controls remote feature locks, payment claims, school billing memos, and license key generation."
                                         SchoolRole.ADMIN -> if (isAdminRegisterMode) "Set up a clean, isolated database for your school. You will receive a School Passkey for your teachers and students." else "Sign in with your School Passkey and Admin credentials."
                                         SchoolRole.TEACHER -> "Enter your School Passkey provided by your Admin, followed by your staff email/ID and security PIN."
                                         SchoolRole.STUDENT -> "Enter your School Passkey, Student Admission Number, and your PIN."
@@ -463,6 +541,7 @@ fun LoginScreen(
                                 label = {
                                     Text(
                                         when (selectedRole) {
+                                            SchoolRole.APP_OWNER -> "Master Owner PIN (9999)"
                                             SchoolRole.ADMIN -> "Admin Password"
                                             SchoolRole.TEACHER -> "Teacher Passcode / PIN (e.g. teach123)"
                                             SchoolRole.STUDENT -> "Student Passcode / PIN (e.g. 1234)"
@@ -547,6 +626,7 @@ fun LoginScreen(
                                     ) {
                                         Text(
                                             text = when (selectedRole) {
+                                                SchoolRole.APP_OWNER -> "Enter App Owner Console"
                                                 SchoolRole.ADMIN -> if (isAdminRegisterMode) "Register School & Enter Admin Portal" else "Enter Admin Portal"
                                                 SchoolRole.TEACHER -> "Enter Teacher Portal"
                                                 SchoolRole.STUDENT -> "Enter Student Portal"
@@ -589,6 +669,12 @@ private fun executeLogin(
     onSuccess: () -> Unit
 ) {
     when (role) {
+        SchoolRole.APP_OWNER -> {
+            val success = viewModel.selectPortal(SchoolRole.APP_OWNER, pin = password)
+            if (success) {
+                onSuccess()
+            }
+        }
         SchoolRole.ADMIN -> {
             if (isAdminRegister) {
                 viewModel.registerNewSchoolAndAdmin(

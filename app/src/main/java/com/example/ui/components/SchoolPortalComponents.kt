@@ -37,6 +37,7 @@ fun RoleBadge(
     modifier: Modifier = Modifier
 ) {
     val (bgColor, textColor, label, icon) = when (role) {
+        SchoolRole.APP_OWNER -> Quad(Color(0xFFD97706), Color.White, "APP OWNER", Icons.Rounded.Security)
         SchoolRole.ADMIN -> Quad(Color(0xFF1E3A8A), Color.White, "ADMIN", Icons.Rounded.AdminPanelSettings)
         SchoolRole.TEACHER -> Quad(Color(0xFF0F766E), Color.White, "TEACHER", Icons.Rounded.CoPresent)
         SchoolRole.STUDENT -> Quad(Color(0xFF2563EB), Color.White, "STUDENT", Icons.Rounded.School)

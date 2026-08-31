@@ -137,6 +137,7 @@ fun RoleAiAssistantScreen(
     }
 
     val roleTitle = when (currentRole) {
+        SchoolRole.APP_OWNER -> "App Owner SaaS Executive AI Advisor"
         SchoolRole.ADMIN -> "Admin Executive AI Advisor"
         SchoolRole.TEACHER -> "Teacher's Pedagogical AI Assistant"
         SchoolRole.STUDENT -> "24/7 Personal Study & CBT AI Tutor"
@@ -144,6 +145,7 @@ fun RoleAiAssistantScreen(
     }
 
     val roleSubtitle = when (currentRole) {
+        SchoolRole.APP_OWNER -> "Draft school payment invoices, license keys, suspension notices & terms"
         SchoolRole.ADMIN -> "Draft official circulars, timetables, commendation letters & policy memos"
         SchoolRole.TEACHER -> "Create lesson notes, CBT exam questions, report card remarks & worksheets"
         SchoolRole.STUDENT -> "Step-by-step problem solver, practice CBT quizzes & study timetables"
@@ -151,6 +153,7 @@ fun RoleAiAssistantScreen(
     }
 
     val roleThemeColor = when (currentRole) {
+        SchoolRole.APP_OWNER -> Color(0xFFD97706)
         SchoolRole.ADMIN -> Color(0xFF1E3A8A)
         SchoolRole.TEACHER -> Color(0xFF0F766E)
         SchoolRole.STUDENT -> PrimaryLight
@@ -158,6 +161,13 @@ fun RoleAiAssistantScreen(
     }
 
     val quickPrompts = when (currentRole) {
+        SchoolRole.APP_OWNER -> listOf(
+            "💳 Draft Official Subscription Renewal Invoice & Payment Memo for Kingsway College",
+            "🔒 Generate Policy Notice on Remote Feature Locking & Term Renewal Deadline",
+            "🔑 Create Instructions for School Admins on License Key Activation in Settings",
+            "📊 Calculate Multi-School Subscription Revenue Projection for Academic Year",
+            "🛡️ Formulate Standard SaaS Terms of Service & Data Protection Policy for Schools"
+        )
         SchoolRole.ADMIN -> listOf(
             "📢 Draft Official Parent Circular on Mid-Term Exams & PTA Meeting",
             "🗓️ Generate Academic Term Operations Timetable & Calendar",
@@ -168,7 +178,7 @@ fun RoleAiAssistantScreen(
         SchoolRole.TEACHER -> listOf(
             "📝 Generate Complete Lesson Plan for Quadratic Equations (SS 2)",
             "🎯 Create 5 WAEC-Standard CBT Questions for Physics (Kinematics)",
-            "✍️ Write Personalized Report Card Remarks for High-Performing Student",
+            "✍️ Write Personalized Report card Remarks for High-Performing Student",
             "💡 Build a Remedial Revision Worksheet for Chemistry Stoichiometry",
             "📋 Prepare English Literature Essay Questions & Marking Scheme"
         )
@@ -580,6 +590,7 @@ fun RoleAiAssistantScreen(
                     placeholder = {
                         Text(
                             when (currentRole) {
+                                SchoolRole.APP_OWNER -> "e.g. Draft payment invoice memo for school renewal..."
                                 SchoolRole.ADMIN -> "e.g. Write mid-term memo for parents..."
                                 SchoolRole.TEACHER -> "e.g. Generate 5 CBT questions on Physics kinematics..."
                                 SchoolRole.STUDENT -> "e.g. How do I solve 2x^2 + 5x - 3 = 0?..."

@@ -23,8 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.ReportCard
 import com.example.data.model.SchoolAnnouncement
 import com.example.data.model.StudentGrade
-import com.example.ui.components.AnnouncementCard
-import com.example.ui.components.GradeBadge
+import com.example.ui.components.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.PortalTab
 import com.example.ui.viewmodel.SchoolViewModel
@@ -42,6 +41,9 @@ fun ParentPortalScreen(
     val allReportCards by viewModel.allReportCards.collectAsState()
     val announcements by viewModel.roleAnnouncements.collectAsState()
 
+    val licenseConfig by viewModel.licenseConfig.collectAsState()
+    val activeOwnerMemos by viewModel.activeOwnerMemos.collectAsState()
+
     // Chidinma Nwosu's data as default linked child
     val studentId = "STU-2025-042"
     val studentGrades = allGrades.filter { it.studentId == studentId }
@@ -49,7 +51,36 @@ fun ParentPortalScreen(
 
     val currentUser by viewModel.currentUser.collectAsState()
 
+    // Master App Lock check
+    if (licenseConfig.isAppLocked) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            LockedFeaturePaywallCard(
+                featureName = "Parent & Ward Academic Portal",
+                lockReason = licenseConfig.lockReason,
+                config = licenseConfig,
+                onRedeemKeyClick = { },
+                onSubmitProofClick = { }
+            )
+        }
+        return
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
+        // App Owner Broadcast Memos
+        activeOwnerMemos.firstOrNull()?.let { activeMemo ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                AppOwnerMemoBanner(
+                    memo = activeMemo,
+                    onPayClick = { },
+                    onDismiss = { viewModel.dismissOwnerMemo(activeMemo.id) }
+                )
+            }
+        }
         // Parent Navigation Tabs
         ScrollableTabRow(
             selectedTabIndex = when (currentTab) {

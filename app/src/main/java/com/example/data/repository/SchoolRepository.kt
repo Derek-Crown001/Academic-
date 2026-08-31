@@ -571,5 +571,79 @@ class SchoolRepository(
             false
         }
     }
+
+    // --- App Owner Master Licensing & Remote Control ---
+    val licenseConfig: Flow<AppOwnerLicenseConfig?> = dao.getLicenseConfigFlow()
+    val allLicenseConfigs: Flow<List<AppOwnerLicenseConfig>> = dao.getAllLicenseConfigsFlow()
+
+    suspend fun getLicenseConfigOnce(schoolCode: String = "SCH-KINGSWAY-01"): AppOwnerLicenseConfig? {
+        return dao.getLicenseConfig(schoolCode)
+    }
+
+    fun getLicenseConfigForSchool(schoolCode: String): Flow<AppOwnerLicenseConfig?> {
+        return dao.getLicenseConfigFlow(schoolCode)
+    }
+
+    suspend fun saveLicenseConfig(config: AppOwnerLicenseConfig) {
+        dao.insertOrUpdateLicenseConfig(config)
+    }
+
+    suspend fun deleteLicenseConfig(schoolCode: String) {
+        dao.deleteLicenseConfig(schoolCode)
+    }
+
+    // --- App Owner Memos & Invoices ---
+    val allOwnerMemos: Flow<List<AppOwnerMemo>> = dao.getAllOwnerMemosFlow()
+    val activeOwnerMemos: Flow<List<AppOwnerMemo>> = dao.getActiveOwnerMemosFlow()
+
+    suspend fun sendOwnerMemo(memo: AppOwnerMemo): Long {
+        return dao.insertOwnerMemo(memo)
+    }
+
+    suspend fun updateOwnerMemo(memo: AppOwnerMemo) {
+        dao.updateOwnerMemo(memo)
+    }
+
+    suspend fun setOwnerMemoPaid(id: Long, isPaid: Boolean) {
+        dao.setOwnerMemoPaidStatus(id, isPaid)
+    }
+
+    suspend fun dismissOwnerMemo(id: Long) {
+        dao.dismissOwnerMemo(id)
+    }
+
+    suspend fun deleteOwnerMemo(memo: AppOwnerMemo) {
+        dao.deleteOwnerMemo(memo)
+    }
+
+    // --- App Owner Payment Claims ---
+    val allPaymentClaims: Flow<List<AppOwnerPaymentClaim>> = dao.getAllPaymentClaimsFlow()
+
+    suspend fun submitPaymentClaim(claim: AppOwnerPaymentClaim): Long {
+        return dao.insertPaymentClaim(claim)
+    }
+
+    suspend fun updatePaymentClaim(claim: AppOwnerPaymentClaim) {
+        dao.updatePaymentClaim(claim)
+    }
+
+    suspend fun deletePaymentClaim(claim: AppOwnerPaymentClaim) {
+        dao.deletePaymentClaim(claim)
+    }
+
+    // --- App Owner License Keys ---
+    val allLicenseKeys: Flow<List<AppOwnerLicenseKey>> = dao.getAllLicenseKeysFlow()
+
+    suspend fun createLicenseKey(key: AppOwnerLicenseKey) {
+        dao.insertLicenseKey(key)
+    }
+
+    suspend fun getLicenseKey(key: String): AppOwnerLicenseKey? {
+        return dao.getLicenseKey(key)
+    }
+
+    suspend fun updateLicenseKey(key: AppOwnerLicenseKey) {
+        dao.updateLicenseKey(key)
+    }
 }
 

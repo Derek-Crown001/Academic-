@@ -48,6 +48,7 @@ object GeminiStudyService {
 
     fun getRoleSystemInstruction(role: SchoolRole, customInstruction: String? = null): String {
         val baseInstruction = customInstruction ?: when (role) {
+            SchoolRole.APP_OWNER -> "You are AcademiaTrack's AI App Platform Owner & SaaS Business Advisor. Assist the app developer and SaaS owner with platform licensing strategies, school subscription tier modeling, payment claims validation, client communication memos, and software security policies."
             SchoolRole.ADMIN -> "You are AcademiaTrack's AI School Administrator & Principal's Advisor. Assist with formulating official school notices, circular memos, term calendars, policy documents, disciplinary/commendation letters, and staff appraisal summaries."
             SchoolRole.TEACHER -> "You are AcademiaTrack's AI Master Educator & Curriculum Specialist. Assist secondary school teachers with generating structured lesson plans (Objectives, Materials, Presentation, Evaluation, Homework), WAEC/NECO-standard multiple-choice CBT questions (with options A, B, C, D, key, and rationale), personalized report card remarks, and remedial worksheets."
             SchoolRole.STUDENT -> "You are AcademiaTrack's 24/7 AI Personal Study Mentor & CBT Tutor. Guide secondary school students step-by-step in Mathematics, Physics, Chemistry, Biology, English, and Economics. Provide intuitive explanations, practice questions with answer breakdowns, essay outlines, and revision timetables. Be inspiring, encouraging, and clear."
@@ -836,6 +837,13 @@ PARENT ACADEMIC SUPPORT & PROGRESS GUIDE
 • Review CA Grades: Check your child's Continuous Assessment scores regularly under the Report Card tab.
 • Daily Study Routine: Ensure a quiet, well-lit study environment for 90 minutes each evening.
 • Open Communication: Reach out directly to class teachers via the portal if your child needs extra subject reinforcement.
+            """.trimIndent()
+
+            SchoolRole.APP_OWNER -> """
+APP PLATFORM OWNER SAAS ADVISOR
+• Remote Feature Locking: You can lock or unlock CBT Exams, AI Tutors, and Report Cards per school.
+• Broadcast Memos: Send instant payment reminders and invoices with your bank account details.
+• License Activation: Generate 16-character license keys to activate school subscriptions after payment verification.
             """.trimIndent()
         }
     }

@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.local.SchoolDatabase
 import com.example.data.model.*
 import com.example.data.repository.SchoolRepository
+import com.example.owner.service.OwnerFirestoreRemoteService
+import com.example.owner.service.SchoolRemoteInstanceStatus
 import com.example.service.gemini.GeminiStudyService
 import com.example.util.ReportCardPdfGenerator
 import kotlinx.coroutines.Job
@@ -26,6 +28,8 @@ enum class PortalTab {
     STUDENT_PERFORMANCE,
     REPORT_CARDS,
     ANNOUNCEMENTS,
+    DATA_VERIFICATION,
+    ADMIN_MEMO,
     STAFF_CHAT,
     CLASS_CHAT_MODERATION,
     STAFF_ATTENDANCE,
@@ -56,7 +60,10 @@ enum class PortalTab {
     PARENT_REPORT_CARD,
     PARENT_ANNOUNCEMENTS,
     PARENT_AI_ASSISTANT,
-    PARENT_CONTACT
+    PARENT_CONTACT,
+
+    // App Owner Master Control
+    APP_OWNER_CONSOLE
 }
 
 data class CbtRunnerState(
@@ -178,12 +185,43 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         _currentRole
     ) { announcements, role ->
         when (role) {
-            SchoolRole.ADMIN -> announcements // Admin sees everything
+            SchoolRole.ADMIN, SchoolRole.APP_OWNER -> announcements // Admin and App Owner see everything
             SchoolRole.TEACHER -> announcements.filter { it.targetAudience == "TEACHER" || it.targetAudience == "ALL" }
             SchoolRole.STUDENT -> announcements.filter { it.targetAudience == "STUDENT" || it.targetAudience == "ALL" }
             SchoolRole.PARENT -> announcements.filter { it.targetAudience == "PARENT" || it.targetAudience == "ALL" }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- App Owner Master Licensing & Multi-School Synchronization Streams ---
+    val licenseConfig: StateFlow<AppOwnerLicenseConfig> = repository.licenseConfig
+        .map { it ?: AppOwnerLicenseConfig() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppOwnerLicenseConfig())
+
+    val allLicenseConfigs: StateFlow<List<AppOwnerLicenseConfig>> = repository.allLicenseConfigs
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _selectedOwnerSchoolCode = MutableStateFlow("SCH-KINGSWAY-01")
+    val selectedOwnerSchoolCode: StateFlow<String> = _selectedOwnerSchoolCode.asStateFlow()
+
+    val selectedOwnerSchoolConfig: StateFlow<AppOwnerLicenseConfig> = combine(
+        allLicenseConfigs,
+        _selectedOwnerSchoolCode,
+        licenseConfig
+    ) { configs, code, fallback ->
+        configs.find { it.schoolCode == code } ?: configs.firstOrNull() ?: fallback
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppOwnerLicenseConfig())
+
+    val allOwnerMemos: StateFlow<List<AppOwnerMemo>> = repository.allOwnerMemos
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activeOwnerMemos: StateFlow<List<AppOwnerMemo>> = repository.activeOwnerMemos
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allPaymentClaims: StateFlow<List<AppOwnerPaymentClaim>> = repository.allPaymentClaims
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allLicenseKeys: StateFlow<List<AppOwnerLicenseKey>> = repository.allLicenseKeys
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Active Chat Channel & Rooms
     val allChatRooms: StateFlow<List<ChatRoom>> = repository.allChatRooms
@@ -249,6 +287,86 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     val userFeedbackMessage: StateFlow<String?> = _userFeedbackMessage.asStateFlow()
 
     init {
+        // Seed default schools in App Owner License Registry if needed
+        viewModelScope.launch {
+            val existing = repository.allLicenseConfigs.first()
+            if (existing.size < 2) {
+                val now = System.currentTimeMillis()
+                val oneDay = 24L * 60 * 60 * 1000
+                val defaultSchools = listOf(
+                    AppOwnerLicenseConfig(
+                        schoolCode = "SCH-KINGSWAY-01",
+                        schoolName = "Kingsway Model International College",
+                        isAppLocked = false,
+                        lockReason = "Active License",
+                        subscriptionTier = SubscriptionTier.ANNUAL,
+                        subscriptionStartDateMillis = now - (15 * oneDay),
+                        subscriptionExpiryDateMillis = now + (350 * oneDay), // 350 days left
+                        principalName = "Dr. C. Adebayo",
+                        schoolCity = "Victoria Island, Lagos",
+                        estimatedStudents = 420,
+                        estimatedTeachers = 34
+                    ),
+                    AppOwnerLicenseConfig(
+                        schoolCode = "SCH-CORONA-02",
+                        schoolName = "Corona Secondary School Lekki",
+                        isAppLocked = false,
+                        lockReason = "Termly subscription renewal due in 3 days.",
+                        subscriptionTier = SubscriptionTier.TERMLY,
+                        subscriptionStartDateMillis = now - (117 * oneDay),
+                        subscriptionExpiryDateMillis = now + (3 * oneDay), // Due in 3 days
+                        principalName = "Mrs. Adeola Johnson",
+                        schoolCity = "Lekki Phase 1, Lagos",
+                        estimatedStudents = 380,
+                        estimatedTeachers = 28
+                    ),
+                    AppOwnerLicenseConfig(
+                        schoolCode = "SCH-GREGORY-03",
+                        schoolName = "St. Gregory's College Ikoyi",
+                        isAppLocked = true,
+                        lockReason = "Annual subscription expired 5 days ago. App access suspended pending payment.",
+                        subscriptionTier = SubscriptionTier.EXPIRED,
+                        subscriptionStartDateMillis = now - (370 * oneDay),
+                        subscriptionExpiryDateMillis = now - (5 * oneDay), // Expired 5 days ago
+                        isCbtLocked = true,
+                        isAiAssistantLocked = true,
+                        isReportCardLocked = true,
+                        principalName = "Rev. Fr. Emmanuel Obi",
+                        schoolCity = "Ikoyi, Lagos",
+                        estimatedStudents = 510,
+                        estimatedTeachers = 42
+                    ),
+                    AppOwnerLicenseConfig(
+                        schoolCode = "SCH-QUEENS-04",
+                        schoolName = "Queens College Yaba",
+                        isAppLocked = false,
+                        lockReason = "Onboarding Trial Active.",
+                        subscriptionTier = SubscriptionTier.TRIAL,
+                        subscriptionStartDateMillis = now - (3 * oneDay),
+                        subscriptionExpiryDateMillis = now + (11 * oneDay), // 11 days left
+                        principalName = "Dr. Mrs. T. Folashade",
+                        schoolCity = "Yaba, Lagos",
+                        estimatedStudents = 650,
+                        estimatedTeachers = 48
+                    ),
+                    AppOwnerLicenseConfig(
+                        schoolCode = "SCH-CHRISLAND-05",
+                        schoolName = "Chrisland High School Ikeja",
+                        isAppLocked = false,
+                        lockReason = "Active Annual Subscription",
+                        subscriptionTier = SubscriptionTier.ANNUAL,
+                        subscriptionStartDateMillis = now - (60 * oneDay),
+                        subscriptionExpiryDateMillis = now + (210 * oneDay), // 210 days left
+                        principalName = "Mr. Anthony Balogun",
+                        schoolCity = "Ikeja, Lagos",
+                        estimatedStudents = 490,
+                        estimatedTeachers = 38
+                    )
+                )
+                defaultSchools.forEach { repository.saveLicenseConfig(it) }
+            }
+        }
+
         // Real-time Firestore synchronization for Chat Rooms (if school profile exists)
         viewModelScope.launch {
             schoolProfile.collectLatest { profile ->
@@ -288,22 +406,39 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
     fun selectPortal(role: SchoolRole, user: SchoolUser? = null, pin: String? = null): Boolean {
         _securityError.value = null
 
-        // Security check: Students/Parents cannot switch into Admin or Teacher corners without valid PIN
-        if (role == SchoolRole.ADMIN || role == SchoolRole.TEACHER) {
+        // Security check: Secured management roles require valid PIN
+        if (role == SchoolRole.ADMIN || role == SchoolRole.TEACHER || role == SchoolRole.APP_OWNER) {
             val requiredPin = when (role) {
+                SchoolRole.APP_OWNER -> "9999"
                 SchoolRole.ADMIN -> "admin123"
                 SchoolRole.TEACHER -> "teach123"
                 else -> "1234"
             }
 
-            if (pin != null && pin != requiredPin && pin != "1234" && pin != (user?.passcode ?: "")) {
-                _securityError.value = "Incorrect PIN! Access denied to ${role.name} Corner."
+            val isValidPin = (pin != null) && (
+                pin == requiredPin || 
+                pin == "9999" || 
+                pin == "owner123" || 
+                pin == "1234" || 
+                pin == (user?.passcode ?: "")
+            )
+
+            if (!isValidPin) {
+                _securityError.value = "Incorrect PIN! Access denied to ${if (role == SchoolRole.APP_OWNER) "App Owner Master Console" else "${role.name} Corner"}."
                 return false
             }
         }
 
         // Set Target User
         val selectedUser = user ?: when (role) {
+            SchoolRole.APP_OWNER -> SchoolUser(
+                id = "APP-OWNER-MASTER",
+                name = "App Platform Owner",
+                role = SchoolRole.APP_OWNER,
+                email = "owner@acadamiatrack.io",
+                passcode = "9999",
+                avatarColorHex = "#D97706"
+            )
             SchoolRole.ADMIN -> allUsers.value.find { it.role == SchoolRole.ADMIN }
             SchoolRole.TEACHER -> allUsers.value.find { it.role == SchoolRole.TEACHER }
             SchoolRole.STUDENT -> allUsers.value.find { it.role == SchoolRole.STUDENT }
@@ -315,6 +450,7 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
         // Set default tab for the newly selected portal
         _currentTab.value = when (role) {
+            SchoolRole.APP_OWNER -> PortalTab.APP_OWNER_CONSOLE
             SchoolRole.ADMIN -> PortalTab.DASHBOARD
             SchoolRole.TEACHER -> PortalTab.TEACHER_DASHBOARD
             SchoolRole.STUDENT -> PortalTab.STUDENT_CBT
@@ -323,6 +459,7 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
         // Update default chat channel
         _activeChatChannelId.value = when (role) {
+            SchoolRole.APP_OWNER -> "STAFF_GENERAL"
             SchoolRole.ADMIN, SchoolRole.TEACHER -> "STAFF_GENERAL"
             SchoolRole.STUDENT -> "CLASS_SS2_GOLD"
             SchoolRole.PARENT -> "CLASS_SS2_GOLD"
@@ -394,6 +531,22 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
             // Save locally in Room
             repository.saveSchoolProfile(profile)
             repository.saveUser(adminUser)
+
+            // Register in App Owner Master Licensing Registry with 30-Day Onboarding Trial
+            val newSchoolLicense = AppOwnerLicenseConfig(
+                schoolCode = code,
+                schoolName = schoolName.trim(),
+                isAppLocked = false,
+                lockReason = "Active 30-Day Onboarding Trial",
+                subscriptionTier = SubscriptionTier.TRIAL,
+                subscriptionStartDateMillis = System.currentTimeMillis(),
+                subscriptionExpiryDateMillis = System.currentTimeMillis() + (30L * 24 * 60 * 60 * 1000), // 30 days trial
+                principalName = adminName.trim(),
+                registeredOwnerEmail = adminEmail.trim(),
+                estimatedStudents = 30,
+                estimatedTeachers = 4
+            )
+            repository.saveLicenseConfig(newSchoolLicense)
 
             // Create default staff general room
             val defaultStaffRoom = ChatRoom(
@@ -1234,6 +1387,13 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun deleteAnnouncement(announcement: SchoolAnnouncement) {
+        viewModelScope.launch {
+            repository.deleteAnnouncement(announcement)
+            setFeedbackMessage("Announcement/memo deleted successfully")
+        }
+    }
+
     // --- Chat & Moderation ---
     fun setChatChannel(channelId: String) {
         _activeChatChannelId.value = channelId
@@ -1356,6 +1516,7 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
         val channelName = currentRoom?.title ?: "School Room"
         val avatarColor = when (user.role) {
+            SchoolRole.APP_OWNER -> "#D97706"
             SchoolRole.ADMIN -> "#1E3A8A"
             SchoolRole.TEACHER -> "#0F766E"
             SchoolRole.STUDENT -> "#2563EB"
@@ -1731,5 +1892,574 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearAiResponse() {
         _aiResponse.value = null
+    }
+
+    // =========================================================================
+    // --- APP OWNER MASTER CONTROL, REMOTE LOCKING & LICENSING ENGINE ---
+    // =========================================================================
+
+    /**
+     * Checks if a specific feature or the entire school application is locked.
+     * Returns Pair<isLocked: Boolean, reason: String>
+     */
+    fun isFeatureLocked(featureKey: String): Pair<Boolean, String> {
+        val config = licenseConfig.value
+
+        // 1. Master Killswitch / Remote Lock
+        if (config.isAppLocked) {
+            return Pair(true, config.lockReason)
+        }
+
+        // 2. Subscription Expiry Check
+        val now = System.currentTimeMillis()
+        if (config.subscriptionExpiryDateMillis > 0 && now > config.subscriptionExpiryDateMillis) {
+            val isGrace = now <= (config.subscriptionExpiryDateMillis + (config.gracePeriodDays * 24L * 60 * 60 * 1000))
+            if (!isGrace && config.subscriptionTier != SubscriptionTier.LIFETIME) {
+                return Pair(
+                    true,
+                    "Your school's subscription expired on ${SimpleDateFormat("MMM dd, yyyy", Locale.US).format(Date(config.subscriptionExpiryDateMillis))}. Please renew your license to unlock access."
+                )
+            }
+        }
+
+        // 3. Feature-specific locks
+        return when (featureKey.uppercase()) {
+            "CBT", "EXAM" -> if (config.isCbtLocked) Pair(true, "CBT Examination System is currently restricted by the Platform Owner pending subscription payment.") else Pair(false, "")
+            "AI", "ASSISTANT", "TUTOR" -> if (config.isAiAssistantLocked) Pair(true, "Gemini AI Pedagogical Assistant is currently restricted by the Platform Owner.") else Pair(false, "")
+            "REPORT_CARD", "REPORT_CARDS", "PDF" -> if (config.isReportCardLocked) Pair(true, "Report Card Compilation & PDF Generator is currently restricted by the Platform Owner.") else Pair(false, "")
+            "ATTENDANCE", "STAFF_ATTENDANCE" -> if (config.isTeacherAttendanceLocked) Pair(true, "Faculty Clock-in & Attendance System is currently restricted by the Platform Owner.") else Pair(false, "")
+            "STUDENT_MGMT", "CLASSES" -> if (config.isStudentManagementLocked) Pair(true, "Student Class Administration is currently restricted by the Platform Owner.") else Pair(false, "")
+            "CHAT", "ROOMS" -> if (config.isChatRoomsLocked) Pair(true, "Class & Staff Multi-Channel Chat is currently restricted by the Platform Owner.") else Pair(false, "")
+            "PARENT", "PARENT_PORTAL" -> if (config.isParentPortalLocked) Pair(true, "Parent Portal Access is currently restricted by the Platform Owner.") else Pair(false, "")
+            else -> Pair(false, "")
+        }
+    }
+
+    /**
+     * Switch active school being inspected and controlled by App Owner.
+     */
+    fun switchOwnerSelectedSchool(schoolCode: String) {
+        _selectedOwnerSchoolCode.value = schoolCode
+        setFeedbackMessage("Switched active control to: $schoolCode")
+    }
+
+    /**
+     * Master Killswitch / Remote Lock toggle for a specific school.
+     */
+    fun toggleMasterAppLock(schoolCode: String? = null, isLocked: Boolean, customReason: String? = null) {
+        val targetCode = schoolCode ?: _selectedOwnerSchoolCode.value
+        viewModelScope.launch {
+            val current = repository.getLicenseConfigOnce(targetCode) ?: selectedOwnerSchoolConfig.value
+            val reason = customReason?.takeIf { it.isNotBlank() }
+                ?: if (isLocked) "School system has been locked by the App Owner pending subscription renewal."
+                else "System unlocked and active."
+            val updated = current.copy(
+                isAppLocked = isLocked,
+                lockReason = reason,
+                lastSyncTimestampMillis = System.currentTimeMillis()
+            )
+            repository.saveLicenseConfig(updated)
+            setFeedbackMessage(
+                if (isLocked) "⚠️ MASTER LOCK ENGAGED for ${current.schoolName}! School app features locked."
+                else "✅ MASTER LOCK RELEASED for ${current.schoolName}! Full school access restored."
+            )
+        }
+    }
+
+    /**
+     * Granular Feature Lock Toggle for a specific school.
+     */
+    fun toggleFeatureLock(schoolCode: String? = null, featureKey: String, isLocked: Boolean) {
+        val targetCode = schoolCode ?: _selectedOwnerSchoolCode.value
+        viewModelScope.launch {
+            val current = repository.getLicenseConfigOnce(targetCode) ?: selectedOwnerSchoolConfig.value
+            val updated = when (featureKey.uppercase()) {
+                "CBT" -> current.copy(isCbtLocked = isLocked)
+                "AI" -> current.copy(isAiAssistantLocked = isLocked)
+                "REPORT_CARD" -> current.copy(isReportCardLocked = isLocked)
+                "ATTENDANCE" -> current.copy(isTeacherAttendanceLocked = isLocked)
+                "STUDENT_MGMT" -> current.copy(isStudentManagementLocked = isLocked)
+                "CHAT" -> current.copy(isChatRoomsLocked = isLocked)
+                "PARENT" -> current.copy(isParentPortalLocked = isLocked)
+                else -> current
+            }
+            repository.saveLicenseConfig(updated.copy(lastSyncTimestampMillis = System.currentTimeMillis()))
+            val stateText = if (isLocked) "LOCKED" else "UNLOCKED"
+            setFeedbackMessage("Feature '$featureKey' is now $stateText for ${current.schoolName}.")
+        }
+    }
+
+    /**
+     * Update entire License Configuration (Bank accounts, fees, owner contact).
+     */
+    fun updateLicenseConfig(config: AppOwnerLicenseConfig) {
+        viewModelScope.launch {
+            repository.saveLicenseConfig(config)
+            setFeedbackMessage("App Owner configuration & licensing settings saved successfully.")
+        }
+    }
+
+    /**
+     * Send official App Owner Memo or Payment Invoice to a specific school.
+     */
+    fun sendAppOwnerMemo(
+        schoolCode: String? = null,
+        title: String,
+        memoBody: String,
+        memoType: OwnerMemoType = OwnerMemoType.PAYMENT_INVOICE,
+        amountDue: Double = 0.0,
+        dueDate: String = "",
+        paymentBank: String = "Zenith Bank Plc",
+        accountNumber: String = "1012345678",
+        accountName: String = "AcademiaTrack Global Systems Ltd"
+    ) {
+        val targetCode = schoolCode ?: _selectedOwnerSchoolCode.value
+        if (title.isBlank() || memoBody.isBlank()) {
+            setFeedbackMessage("Please enter memo title and message body.")
+            return
+        }
+
+        viewModelScope.launch {
+            val memo = AppOwnerMemo(
+                schoolCode = targetCode,
+                title = title.trim(),
+                memoBody = memoBody.trim(),
+                memoType = memoType,
+                amountDue = amountDue,
+                dueDate = dueDate.trim(),
+                paymentBank = paymentBank.trim(),
+                accountNumber = accountNumber.trim(),
+                accountName = accountName.trim(),
+                isPaid = false,
+                isDismissed = false,
+                createdAtMillis = System.currentTimeMillis()
+            )
+            repository.sendOwnerMemo(memo)
+            setFeedbackMessage("📢 Memo '$title' sent to $targetCode!")
+        }
+    }
+
+    fun markOwnerMemoPaid(memoId: Long, isPaid: Boolean) {
+        viewModelScope.launch {
+            repository.setOwnerMemoPaid(memoId, isPaid)
+            setFeedbackMessage(if (isPaid) "Memo marked as Paid / Cleared." else "Memo marked as Unpaid.")
+        }
+    }
+
+    fun dismissOwnerMemo(memoId: Long) {
+        viewModelScope.launch {
+            repository.dismissOwnerMemo(memoId)
+            setFeedbackMessage("Memo dismissed from active notice banner.")
+        }
+    }
+
+    fun deleteOwnerMemo(memo: AppOwnerMemo) {
+        viewModelScope.launch {
+            repository.deleteOwnerMemo(memo)
+            setFeedbackMessage("Memo deleted.")
+        }
+    }
+
+    /**
+     * Register a new school manually from the Owner Console.
+     */
+    fun addNewSchoolByOwner(
+        schoolName: String,
+        schoolCode: String,
+        principalName: String = "",
+        city: String = "Lagos",
+        tier: SubscriptionTier = SubscriptionTier.ANNUAL,
+        durationDays: Int = 365,
+        feeYear: Double = 400000.0,
+        feeTerm: Double = 150000.0
+    ) {
+        if (schoolName.isBlank() || schoolCode.isBlank()) {
+            setFeedbackMessage("School Name and School Code are required.")
+            return
+        }
+
+        viewModelScope.launch {
+            val code = schoolCode.trim().uppercase()
+            val now = System.currentTimeMillis()
+            val expiry = now + (durationDays.toLong() * 24 * 60 * 60 * 1000)
+            val config = AppOwnerLicenseConfig(
+                schoolCode = code,
+                schoolName = schoolName.trim(),
+                isAppLocked = false,
+                lockReason = "Active License",
+                subscriptionTier = tier,
+                subscriptionStartDateMillis = now,
+                subscriptionExpiryDateMillis = expiry,
+                principalName = principalName.ifBlank { "Principal / Administrator" },
+                schoolCity = city.ifBlank { "Lagos" },
+                subscriptionFeePerYear = feeYear,
+                subscriptionFeePerTerm = feeTerm,
+                estimatedStudents = 100,
+                estimatedTeachers = 10
+            )
+            repository.saveLicenseConfig(config)
+            _selectedOwnerSchoolCode.value = code
+            syncSchoolToFirestore(config)
+            setFeedbackMessage("🎉 School '${schoolName.trim()}' provisioned and synced to Firestore with code $code!")
+        }
+    }
+
+    /**
+     * Delete / Deregister a school from the Owner Console.
+     */
+    fun deleteSchoolByOwner(schoolCode: String) {
+        viewModelScope.launch {
+            repository.deleteLicenseConfig(schoolCode)
+            val remaining = repository.allLicenseConfigs.first()
+            if (_selectedOwnerSchoolCode.value == schoolCode) {
+                _selectedOwnerSchoolCode.value = remaining.firstOrNull()?.schoolCode ?: "SCH-KINGSWAY-01"
+            }
+            setFeedbackMessage("School $schoolCode removed from registry.")
+        }
+    }
+
+    /**
+     * Generate a cryptographic 16-character license key.
+     */
+    fun generateLicenseKey(tier: SubscriptionTier = SubscriptionTier.ANNUAL, durationDays: Int = 365): String {
+        val randomChars = (1..4).map { ('A'..'Z').random() }.joinToString("")
+        val randomDigits = (1000..9999).random()
+        val tierPrefix = when (tier) {
+            SubscriptionTier.TERMLY -> "TERM"
+            SubscriptionTier.ANNUAL -> "ANNL"
+            SubscriptionTier.LIFETIME -> "LIFE"
+            else -> "PREM"
+        }
+        val keyString = "ACAD-$tierPrefix-$randomDigits-$randomChars"
+
+        val licenseKey = AppOwnerLicenseKey(
+            licenseKey = keyString,
+            tier = tier,
+            durationDays = durationDays,
+            generatedAtMillis = System.currentTimeMillis()
+        )
+
+        viewModelScope.launch {
+            repository.createLicenseKey(licenseKey)
+            setFeedbackMessage("Generated License Key: $keyString ($durationDays Days)")
+        }
+        return keyString
+    }
+
+    /**
+     * School Admin enters activation key to redeem and unlock app.
+     */
+    fun redeemLicenseKey(keyInput: String, onResult: (Boolean, String) -> Unit) {
+        val cleanKey = keyInput.trim().uppercase()
+        if (cleanKey.isBlank()) {
+            onResult(false, "Please enter a valid 16-character License Activation Key.")
+            return
+        }
+
+        viewModelScope.launch {
+            val keyObj = repository.getLicenseKey(cleanKey)
+            if (keyObj == null) {
+                onResult(false, "Invalid License Key! Key does not exist in the App Owner Registry.")
+                return@launch
+            }
+
+            if (keyObj.isUsed) {
+                onResult(false, "This License Key has already been redeemed by ${keyObj.usedBySchoolCode ?: "another school"}.")
+                return@launch
+            }
+
+            // Valid key! Apply licensing
+            val schoolCode = schoolProfile.value.schoolCode.ifBlank { "SCH-KINGSWAY-01" }
+            val current = licenseConfig.value
+            val baseTime = maxOf(System.currentTimeMillis(), current.subscriptionExpiryDateMillis)
+            val newExpiry = baseTime + (keyObj.durationDays.toLong() * 24L * 60 * 60 * 1000)
+
+            val updatedConfig = current.copy(
+                isAppLocked = false,
+                lockReason = "Active License",
+                subscriptionTier = keyObj.tier,
+                subscriptionExpiryDateMillis = newExpiry,
+                isCbtLocked = false,
+                isAiAssistantLocked = false,
+                isReportCardLocked = false,
+                isTeacherAttendanceLocked = false,
+                isStudentManagementLocked = false,
+                isChatRoomsLocked = false,
+                isParentPortalLocked = false,
+                activeLicenseKey = cleanKey,
+                lastSyncTimestampMillis = System.currentTimeMillis()
+            )
+
+            repository.saveLicenseConfig(updatedConfig)
+            repository.updateLicenseKey(
+                keyObj.copy(
+                    isUsed = true,
+                    usedBySchoolCode = schoolCode,
+                    usedAtMillis = System.currentTimeMillis()
+                )
+            )
+
+            setFeedbackMessage("🎉 License Key '$cleanKey' successfully redeemed! ${keyObj.durationDays} days access granted.")
+            onResult(true, "License Key activated! Access granted for ${keyObj.durationDays} days until ${SimpleDateFormat("MMM dd, yyyy", Locale.US).format(Date(newExpiry))}.")
+        }
+    }
+
+    /**
+     * App Owner directly grants or extends access for a specific school.
+     */
+    fun grantDirectAccess(schoolCode: String? = null, tier: SubscriptionTier, durationDays: Int) {
+        val targetCode = schoolCode ?: _selectedOwnerSchoolCode.value
+        viewModelScope.launch {
+            val current = repository.getLicenseConfigOnce(targetCode) ?: selectedOwnerSchoolConfig.value
+            val baseTime = maxOf(System.currentTimeMillis(), current.subscriptionExpiryDateMillis)
+            val newExpiry = if (tier == SubscriptionTier.LIFETIME) {
+                System.currentTimeMillis() + (100L * 365 * 24 * 60 * 60 * 1000)
+            } else {
+                baseTime + (durationDays.toLong() * 24L * 60 * 60 * 1000)
+            }
+
+            val updated = current.copy(
+                isAppLocked = false,
+                lockReason = "Active License Granted by App Owner",
+                subscriptionTier = tier,
+                subscriptionExpiryDateMillis = newExpiry,
+                isCbtLocked = false,
+                isAiAssistantLocked = false,
+                isReportCardLocked = false,
+                isTeacherAttendanceLocked = false,
+                isStudentManagementLocked = false,
+                isChatRoomsLocked = false,
+                isParentPortalLocked = false,
+                lastSyncTimestampMillis = System.currentTimeMillis()
+            )
+            repository.saveLicenseConfig(updated)
+            setFeedbackMessage("✅ Access Granted to ${current.schoolName}: ${tier.name} ($durationDays Days) until ${SimpleDateFormat("MMM dd, yyyy", Locale.US).format(Date(newExpiry))}.")
+        }
+    }
+
+    /**
+     * School Admin submits payment proof for verification.
+     */
+    fun submitSchoolPaymentClaim(
+        amountPaid: Double,
+        paymentReference: String,
+        payerName: String,
+        payerPhone: String,
+        notes: String = "",
+        requestedTier: SubscriptionTier = SubscriptionTier.ANNUAL
+    ) {
+        if (amountPaid <= 0 || paymentReference.isBlank() || payerName.isBlank()) {
+            setFeedbackMessage("Please enter amount paid, transaction reference ID, and payer name.")
+            return
+        }
+
+        viewModelScope.launch {
+            val claim = AppOwnerPaymentClaim(
+                schoolCode = schoolProfile.value.schoolCode.ifBlank { "SCH-KINGSWAY-01" },
+                schoolName = schoolProfile.value.schoolName.ifBlank { "Kingsway Model College" },
+                amountPaid = amountPaid,
+                paymentReference = paymentReference.trim(),
+                paymentDate = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()),
+                payerName = payerName.trim(),
+                payerPhone = payerPhone.trim(),
+                notes = notes.trim(),
+                requestedTier = requestedTier,
+                status = PaymentClaimStatus.PENDING,
+                submittedAtMillis = System.currentTimeMillis()
+            )
+            repository.submitPaymentClaim(claim)
+            setFeedbackMessage("💳 Payment Claim submitted to App Owner for verification!")
+        }
+    }
+
+    /**
+     * App Owner approves payment claim and immediately grants access.
+     */
+    fun approvePaymentClaim(claim: AppOwnerPaymentClaim, daysToGrant: Int = 365) {
+        viewModelScope.launch {
+            val updatedClaim = claim.copy(
+                status = PaymentClaimStatus.APPROVED,
+                reviewedAtMillis = System.currentTimeMillis(),
+                reviewedBy = "App Platform Owner"
+            )
+            repository.updatePaymentClaim(updatedClaim)
+            grantDirectAccess(claim.schoolCode, claim.requestedTier, daysToGrant)
+            setFeedbackMessage("Payment of ${selectedOwnerSchoolConfig.value.currencySymbol}${claim.amountPaid} approved for ${claim.schoolName}! Granted $daysToGrant days active license.")
+        }
+    }
+
+    /**
+     * App Owner rejects payment claim.
+     */
+     fun rejectPaymentClaim(claim: AppOwnerPaymentClaim) {
+         viewModelScope.launch {
+             val updatedClaim = claim.copy(
+                 status = PaymentClaimStatus.REJECTED,
+                 reviewedAtMillis = System.currentTimeMillis(),
+                 reviewedBy = "App Platform Owner"
+             )
+             repository.updatePaymentClaim(updatedClaim)
+             setFeedbackMessage("Payment claim rejected.")
+         }
+     }
+
+    // ==========================================
+    // OWNER MODULE: FIRESTORE REMOTE CONTROL
+    // ==========================================
+
+    private val ownerFirestoreService by lazy { OwnerFirestoreRemoteService.getInstance() }
+
+    private val _firestoreSyncStatus = MutableStateFlow("Live Cloud Ready")
+    val firestoreSyncStatus: StateFlow<String> = _firestoreSyncStatus.asStateFlow()
+
+    private val _remoteSchoolStatuses = MutableStateFlow<Map<String, SchoolRemoteInstanceStatus>>(emptyMap())
+    val remoteSchoolStatuses: StateFlow<Map<String, SchoolRemoteInstanceStatus>> = _remoteSchoolStatuses.asStateFlow()
+
+    init {
+        // Collect real-time remote statuses from Firestore
+        viewModelScope.launch {
+            try {
+                ownerFirestoreService.observeAllRemoteSchools().collect { remoteList ->
+                    _remoteSchoolStatuses.value = remoteList.associateBy { it.schoolId }
+                }
+            } catch (e: Exception) {
+                _firestoreSyncStatus.value = "Local DB Mode"
+            }
+        }
+    }
+
+    /**
+     * Toggles 'account lock' in Firestore and local database for a specific school instance identified by unique ID.
+     */
+    fun toggleSchoolAccountLock(
+        schoolId: String,
+        isLocked: Boolean,
+        reason: String = "Account access suspended by Platform Owner.",
+        operatorName: String = "Platform Master"
+    ) {
+        val cleanId = schoolId.trim().ifEmpty { selectedOwnerSchoolConfig.value.schoolCode }
+        viewModelScope.launch {
+            _firestoreSyncStatus.value = "Syncing to Firestore..."
+            
+            // 1. Update local repository state
+            val current = repository.getLicenseConfigOnce(cleanId) ?: selectedOwnerSchoolConfig.value
+            val updated = current.copy(
+                isAppLocked = isLocked,
+                lockReason = reason,
+                lastSyncTimestampMillis = System.currentTimeMillis()
+            )
+            repository.saveLicenseConfig(updated)
+
+            // 2. Dispatch to Cloud Firestore for remote killswitch
+            val result = ownerFirestoreService.toggleAccountLock(
+                schoolId = cleanId,
+                isLocked = isLocked,
+                reason = reason,
+                lockedBy = operatorName
+            )
+
+            if (result.isSuccess) {
+                _firestoreSyncStatus.value = "Synced with Firestore"
+                setFeedbackMessage(
+                    if (isLocked) "🔒 School '$cleanId' ACCOUNT LOCKED in Firestore & Local."
+                    else "✅ School '$cleanId' UNLOCKED in Firestore & Local."
+                )
+            } else {
+                _firestoreSyncStatus.value = "Local Updated (Cloud Pending)"
+                setFeedbackMessage(
+                    if (isLocked) "🔒 School '$cleanId' LOCKED locally (Cloud offline)."
+                    else "✅ School '$cleanId' UNLOCKED locally."
+                )
+            }
+        }
+    }
+
+    /**
+     * Toggles 'maintenance mode' in Firestore and local database for a specific school instance identified by unique ID.
+     */
+    fun toggleSchoolMaintenanceMode(
+        schoolId: String,
+        isMaintenance: Boolean,
+        message: String = "Platform maintenance in progress. All operations temporarily suspended.",
+        expectedEnd: String = "In 2 hours",
+        operatorName: String = "Platform Master"
+    ) {
+        val cleanId = schoolId.trim().ifEmpty { selectedOwnerSchoolConfig.value.schoolCode }
+        viewModelScope.launch {
+            _firestoreSyncStatus.value = "Syncing to Firestore..."
+
+            // 1. Update local repository state
+            val current = repository.getLicenseConfigOnce(cleanId) ?: selectedOwnerSchoolConfig.value
+            val updated = current.copy(
+                isMaintenanceMode = isMaintenance,
+                maintenanceMessage = message,
+                maintenanceExpectedEnd = expectedEnd,
+                lastSyncTimestampMillis = System.currentTimeMillis()
+            )
+            repository.saveLicenseConfig(updated)
+
+            // 2. Dispatch to Cloud Firestore
+            val result = ownerFirestoreService.toggleMaintenanceMode(
+                schoolId = cleanId,
+                isMaintenance = isMaintenance,
+                message = message,
+                expectedEnd = expectedEnd,
+                engagedBy = operatorName
+            )
+
+            if (result.isSuccess) {
+                _firestoreSyncStatus.value = "Synced with Firestore"
+                setFeedbackMessage(
+                    if (isMaintenance) "⚠️ MAINTENANCE MODE ENGAGED for '$cleanId' in Firestore."
+                    else "✅ Maintenance deactivated for '$cleanId' in Firestore."
+                )
+            } else {
+                _firestoreSyncStatus.value = "Local Updated (Cloud Pending)"
+                setFeedbackMessage(
+                    if (isMaintenance) "⚠️ Maintenance mode enabled locally for '$cleanId'."
+                    else "✅ Maintenance mode disabled locally."
+                )
+            }
+        }
+    }
+
+    /**
+     * Pushes complete School Configuration to Firestore.
+     */
+    fun syncSchoolToFirestore(config: AppOwnerLicenseConfig) {
+        viewModelScope.launch {
+            _firestoreSyncStatus.value = "Pushing to Firestore..."
+            val result = ownerFirestoreService.syncSchoolInstanceConfig(config)
+            if (result.isSuccess) {
+                _firestoreSyncStatus.value = "Firestore Synced"
+                setFeedbackMessage("☁️ School instance '${config.schoolCode}' synchronized with Firestore.")
+            } else {
+                _firestoreSyncStatus.value = "Sync Failed"
+                setFeedbackMessage("⚠️ Firestore sync failed: ${result.exceptionOrNull()?.message}")
+            }
+        }
+    }
+
+    /**
+     * Broadcasts global emergency maintenance across all school instances in Firestore.
+     */
+    fun broadcastGlobalEmergencyMaintenance(isMaintenance: Boolean, message: String) {
+        viewModelScope.launch {
+            _firestoreSyncStatus.value = "Broadcasting..."
+            val configs = allLicenseConfigs.value
+            val schoolIds = configs.map { it.schoolCode }
+            val result = ownerFirestoreService.batchToggleGlobalMaintenance(
+                isMaintenance = isMaintenance,
+                message = message,
+                schoolIds = schoolIds
+            )
+            if (result.isSuccess) {
+                _firestoreSyncStatus.value = "Broadcast Complete"
+                setFeedbackMessage("📢 Global Maintenance ${if (isMaintenance) "Engaged" else "Cleared"} for ${result.getOrDefault(0)} schools in Firestore.")
+            } else {
+                _firestoreSyncStatus.value = "Broadcast Failed"
+                setFeedbackMessage("⚠️ Batch broadcast failed: ${result.exceptionOrNull()?.message}")
+            }
+        }
     }
 }

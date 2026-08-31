@@ -24,7 +24,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.*
-import com.example.ui.components.GradeBadge
+import com.example.ui.components.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.PortalTab
 import com.example.ui.viewmodel.SchoolViewModel
@@ -50,13 +50,45 @@ fun TeacherPortalScreen(
     val currentTeacherAttendance by viewModel.currentTeacherAttendance.collectAsState()
     val allReportCards by viewModel.allReportCards.collectAsState()
 
+    val licenseConfig by viewModel.licenseConfig.collectAsState()
+    val activeOwnerMemos by viewModel.activeOwnerMemos.collectAsState()
+
     var showCreateCbtDialog by remember { mutableStateOf(false) }
     var showCreateAssignmentDialog by remember { mutableStateOf(false) }
     var showAddSubjectDialog by remember { mutableStateOf(false) }
     var selectedGradeStudent by remember { mutableStateOf<StudentGrade?>(null) }
     var selectedExamForQuestionBank by remember { mutableStateOf<CbtExam?>(null) }
 
+    // Master App Lock check
+    if (licenseConfig.isAppLocked) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            LockedFeaturePaywallCard(
+                featureName = "Teacher Portal",
+                lockReason = licenseConfig.lockReason,
+                config = licenseConfig,
+                onRedeemKeyClick = { },
+                onSubmitProofClick = { }
+            )
+        }
+        return
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
+        // App Owner Broadcast Memos
+        activeOwnerMemos.firstOrNull()?.let { activeMemo ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                AppOwnerMemoBanner(
+                    memo = activeMemo,
+                    onPayClick = { },
+                    onDismiss = { viewModel.dismissOwnerMemo(activeMemo.id) }
+                )
+            }
+        }
         // Teacher Navigation Tabs
         ScrollableTabRow(
             selectedTabIndex = when (currentTab) {
@@ -179,12 +211,23 @@ fun TeacherPortalScreen(
                 )
             }
             PortalTab.CBT_CREATOR -> {
-                TeacherCbtContent(
-                    cbtExams = allCbtExams,
-                    onCreateCbtClick = { showCreateCbtDialog = true },
-                    onStartExamPreview = { viewModel.startCbtExam(it) },
-                    onManageQuestionBank = { exam -> selectedExamForQuestionBank = exam }
-                )
+                val (isLocked, reason) = viewModel.isFeatureLocked("cbt_exams")
+                if (isLocked) {
+                    LockedFeaturePaywallCard(
+                        featureName = "CBT Exam Creator & Examination Engine",
+                        lockReason = reason,
+                        config = licenseConfig,
+                        onRedeemKeyClick = {},
+                        onSubmitProofClick = {}
+                    )
+                } else {
+                    TeacherCbtContent(
+                        cbtExams = allCbtExams,
+                        onCreateCbtClick = { showCreateCbtDialog = true },
+                        onStartExamPreview = { viewModel.startCbtExam(it) },
+                        onManageQuestionBank = { exam -> selectedExamForQuestionBank = exam }
+                    )
+                }
             }
             PortalTab.ASSIGNMENT_MANAGER -> {
                 TeacherAssignmentsContent(
@@ -197,11 +240,22 @@ fun TeacherPortalScreen(
                 )
             }
             PortalTab.TEACHER_AI_ASSISTANT -> {
-                RoleAiAssistantScreen(
-                    viewModel = viewModel,
-                    currentUser = currentUser,
-                    currentRole = SchoolRole.TEACHER
-                )
+                val (isLocked, reason) = viewModel.isFeatureLocked("ai_lesson_planner")
+                if (isLocked) {
+                    LockedFeaturePaywallCard(
+                        featureName = "AI Teacher Assistant & Lesson Planner",
+                        lockReason = reason,
+                        config = licenseConfig,
+                        onRedeemKeyClick = {},
+                        onSubmitProofClick = {}
+                    )
+                } else {
+                    RoleAiAssistantScreen(
+                        viewModel = viewModel,
+                        currentUser = currentUser,
+                        currentRole = SchoolRole.TEACHER
+                    )
+                }
             }
             PortalTab.STAFF_CHAT -> {
                 ChatRoomScreen(viewModel = viewModel)

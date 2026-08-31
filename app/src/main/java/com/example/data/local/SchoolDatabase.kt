@@ -24,9 +24,13 @@ import kotlinx.coroutines.CoroutineScope
         ChatMessage::class,
         SchoolProfile::class,
         TeacherAttendance::class,
-        StudentAttendanceRecord::class
+        StudentAttendanceRecord::class,
+        AppOwnerLicenseConfig::class,
+        AppOwnerMemo::class,
+        AppOwnerPaymentClaim::class,
+        AppOwnerLicenseKey::class
     ],
-    version = 6,
+    version = 8,
     exportSchema = false
 )
 abstract class SchoolDatabase : RoomDatabase() {

@@ -660,7 +660,7 @@ fun AddEditClassDialog(
                     )
                 }
 
-                // Class Name Display & Override
+                // Class Name Display
                 item {
                     Text("3. Full Class Name", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryLight)
                     Surface(

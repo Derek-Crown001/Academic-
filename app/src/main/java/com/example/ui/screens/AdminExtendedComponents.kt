@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.content.Context
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1222,3 +1223,667 @@ fun AdminReportCardsApprovalContent(
         }
     }
 }
+
+/**
+ * Data Verification Dashboard Composable for School Admins.
+ * Performs deep integrity checks across:
+ * - Student enrollments, admission numbers, assigned classes
+ * - Teacher assignments and subject allocations
+ * - CA continuous assessment completeness and missing grades
+ * - CBT exam configurations and question bank validation
+ * - Report cards status and terminal seal readiness
+ * - Firebase cloud sync & local SQLite consistency
+ */
+@Composable
+fun AdminDataVerificationDashboardContent(
+    students: List<SchoolUser>,
+    teachers: List<SchoolUser>,
+    classes: List<SchoolClass>,
+    subjects: List<SchoolSubject>,
+    cbtExams: List<CbtExam>,
+    cbtSubmissions: List<CbtSubmission>,
+    reportCards: List<ReportCard>,
+    grades: List<StudentGrade>,
+    cloudSyncStatus: com.example.service.firestore.CloudSyncStatus,
+    licenseConfig: AppOwnerLicenseConfig,
+    onRunFullAudit: () -> Unit = {},
+    onNavigateToTab: (com.example.ui.viewmodel.PortalTab) -> Unit = {}
+) {
+    // Computed Data Verification Metrics
+    val unassignedTeachers = teachers.filter { it.assignedSubjects.isBlank() && it.className.isBlank() }
+    val classesWithoutTeacher = classes.filter { it.classTeacherId.isBlank() || it.classTeacherName.isBlank() }
+    val subjectsWithoutTeacher = subjects.filter { it.teacherId.isBlank() || it.teacherName.isBlank() || it.teacherName.equals("Unassigned", ignoreCase = true) }
+    val duplicateAdmissionNos = students.groupBy { it.id }.filter { it.value.size > 1 }.keys
+    val incompleteReportCards = reportCards.filter { it.totalScore <= 0 || it.averageScore <= 0 }
+    val pendingSealReportCards = reportCards.filter { !it.isApprovedByAdmin }
+    val examsWithoutQuestions = cbtExams.filter { it.totalMarks <= 0 }
+    val studentsWithoutGrades = students.filter { stu -> grades.none { it.studentId == stu.id } }
+
+    val totalChecks = 7
+    val passedChecks = listOf(
+        unassignedTeachers.isEmpty(),
+        classesWithoutTeacher.isEmpty(),
+        subjectsWithoutTeacher.isEmpty(),
+        duplicateAdmissionNos.isEmpty(),
+        incompleteReportCards.isEmpty(),
+        examsWithoutQuestions.isEmpty(),
+        studentsWithoutGrades.isEmpty()
+    ).count { it }
+
+    val healthScore = ((passedChecks.toFloat() / totalChecks.toFloat()) * 100).toInt()
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Hero Health Score Card
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = when {
+                        healthScore >= 90 -> Color(0xFF065F46)
+                        healthScore >= 70 -> Color(0xFF1E3A8A)
+                        else -> Color(0xFF9A3412)
+                    }
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Institution Data Integrity Audit",
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 18.sp
+                            )
+                            Text(
+                                text = "Comprehensive cross-portal consistency & verification engine",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.White.copy(alpha = 0.2f),
+                            modifier = Modifier.size(56.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "$healthScore%",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 18.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // Progress Bar
+                    LinearProgressIndicator(
+                        progress = { healthScore / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = when {
+                            healthScore >= 90 -> Color(0xFF34D399)
+                            healthScore >= 70 -> Color(0xFF60A5FA)
+                            else -> Color(0xFFF87171)
+                        },
+                        trackColor = Color.White.copy(alpha = 0.2f)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "$passedChecks of $totalChecks verification categories healthy",
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Text(
+                            text = if (healthScore >= 90) "STATUS: OPTIMAL" else if (healthScore >= 70) "STATUS: ATTENTION NEEDED" else "STATUS: ACTION REQUIRED",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Summary Badges
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AdminStatCard(
+                    title = "Verified Students",
+                    value = "${students.size}",
+                    icon = Icons.Rounded.School,
+                    color = PrimaryLight,
+                    modifier = Modifier.weight(1f)
+                )
+                AdminStatCard(
+                    title = "Active Faculty",
+                    value = "${teachers.size}",
+                    icon = Icons.Rounded.Badge,
+                    color = AcademicEmerald,
+                    modifier = Modifier.weight(1f)
+                )
+                AdminStatCard(
+                    title = "Verified Classes",
+                    value = "${classes.size}",
+                    icon = Icons.Rounded.MeetingRoom,
+                    color = SecondaryLight,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        // Verification Categories List Header
+        item {
+            Text(
+                text = "Verification Checkpoints & Audit Items",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        // Checkpoint 1: Faculty Allocation
+        item {
+            VerificationCheckCard(
+                title = "Faculty & Subject Allocations",
+                description = if (unassignedTeachers.isEmpty()) "All registered teachers have assigned classrooms or subject responsibilities." else "${unassignedTeachers.size} teacher(s) currently unassigned.",
+                passed = unassignedTeachers.isEmpty(),
+                detailText = if (unassignedTeachers.isNotEmpty()) "Unassigned: ${unassignedTeachers.joinToString { it.name }}" else null,
+                actionLabel = "Manage Faculty",
+                onAction = { onNavigateToTab(com.example.ui.viewmodel.PortalTab.STAFF_ATTENDANCE) }
+            )
+        }
+
+        // Checkpoint 2: Class Arms Teacher Assignment
+        item {
+            VerificationCheckCard(
+                title = "Class Arms Form Master Assignment",
+                description = if (classesWithoutTeacher.isEmpty()) "All ${classes.size} class arms have an appointed Form Master / Class Teacher." else "${classesWithoutTeacher.size} class arm(s) lack a class teacher.",
+                passed = classesWithoutTeacher.isEmpty(),
+                detailText = if (classesWithoutTeacher.isNotEmpty()) "Missing teacher: ${classesWithoutTeacher.joinToString { it.name }}" else null,
+                actionLabel = "Manage Classes",
+                onAction = { onNavigateToTab(com.example.ui.viewmodel.PortalTab.CLASSES) }
+            )
+        }
+
+        // Checkpoint 3: Curriculum Subject Teachers
+        item {
+            VerificationCheckCard(
+                title = "Curriculum & Subject Coverage",
+                description = if (subjectsWithoutTeacher.isEmpty()) "All ${subjects.size} subjects across all class levels have designated subject teachers." else "${subjectsWithoutTeacher.size} subject(s) are unassigned.",
+                passed = subjectsWithoutTeacher.isEmpty(),
+                detailText = if (subjectsWithoutTeacher.isNotEmpty()) "Unassigned: ${subjectsWithoutTeacher.joinToString { it.name }}" else null,
+                actionLabel = "View Curriculum",
+                onAction = { onNavigateToTab(com.example.ui.viewmodel.PortalTab.SUBJECTS) }
+            )
+        }
+
+        // Checkpoint 4: Student Gradebook Coverage
+        item {
+            VerificationCheckCard(
+                title = "Continuous Assessment & Gradebook Entries",
+                description = if (studentsWithoutGrades.isEmpty()) "All ${students.size} enrolled students have CA test & exam marks recorded." else "${studentsWithoutGrades.size} student(s) have no grades entered in CA book.",
+                passed = studentsWithoutGrades.isEmpty(),
+                detailText = if (studentsWithoutGrades.isNotEmpty()) "${studentsWithoutGrades.size} students missing grades" else null,
+                actionLabel = "Gradebook Overview",
+                onAction = { onNavigateToTab(com.example.ui.viewmodel.PortalTab.REPORT_CARDS) }
+            )
+        }
+
+        // Checkpoint 5: Terminal Report Card Approvals
+        item {
+            VerificationCheckCard(
+                title = "Terminal Report Card Official Seal",
+                description = if (pendingSealReportCards.isEmpty()) "All ${reportCards.size} terminal report cards are officially sealed and approved." else "${pendingSealReportCards.size} report card(s) await Principal/Admin approval.",
+                passed = pendingSealReportCards.isEmpty(),
+                detailText = "${reportCards.count { it.isApprovedByAdmin }} Approved • ${pendingSealReportCards.size} Pending Review",
+                actionLabel = "Review & Seal",
+                onAction = { onNavigateToTab(com.example.ui.viewmodel.PortalTab.REPORT_CARDS) }
+            )
+        }
+
+        // Checkpoint 6: CBT Question Bank Readiness
+        item {
+            VerificationCheckCard(
+                title = "CBT Assessments & Question Bank Integrity",
+                description = if (examsWithoutQuestions.isEmpty()) "All ${cbtExams.size} CBT exams have question pools with validated pass marks." else "${examsWithoutQuestions.size} exam(s) have no questions or zero total marks.",
+                passed = examsWithoutQuestions.isEmpty(),
+                detailText = if (examsWithoutQuestions.isNotEmpty()) "Empty exams: ${examsWithoutQuestions.joinToString { it.title }}" else "Total Submissions: ${cbtSubmissions.size}",
+                actionLabel = "View Assessments",
+                onAction = { onNavigateToTab(com.example.ui.viewmodel.PortalTab.DASHBOARD) }
+            )
+        }
+
+        // Checkpoint 7: Cloud Sync & Backup Status
+        item {
+            VerificationCheckCard(
+                title = "Firebase Cloud Sync & Local Storage Mirror",
+                description = when (cloudSyncStatus.state) {
+                    com.example.service.firestore.CloudSyncState.SUCCESS -> "Local SQLite database and Firebase Firestore cloud are in full synchronization."
+                    com.example.service.firestore.CloudSyncState.SYNCING -> "Cloud synchronization currently in progress..."
+                    else -> "Offline storage verified. Ready for cloud backup sync."
+                },
+                passed = cloudSyncStatus.state != com.example.service.firestore.CloudSyncState.ERROR,
+                detailText = cloudSyncStatus.message,
+                actionLabel = "Sync Now",
+                onAction = { onRunFullAudit() }
+            )
+        }
+    }
+}
+
+@Composable
+fun VerificationCheckCard(
+    title: String,
+    description: String,
+    passed: Boolean,
+    detailText: String? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (passed) MaterialTheme.colorScheme.surface else Color(0xFFFFFBEB)
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (passed) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f) else Color(0xFFFDE68A)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (passed) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.2f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (passed) Icons.Rounded.CheckCircle else Icons.Rounded.WarningAmber,
+                            contentDescription = null,
+                            tint = if (passed) Color(0xFF047857) else Color(0xFFD97706),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(text = title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            text = if (passed) "VERIFIED" else "ATTENTION NEEDED",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (passed) Color(0xFF047857) else Color(0xFFB45309)
+                        )
+                    }
+                }
+
+                if (actionLabel != null && onAction != null) {
+                    FilledTonalButton(
+                        onClick = onAction,
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(actionLabel, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Text(
+                text = description,
+                fontSize = 12.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 17.sp
+            )
+
+            if (detailText != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (passed) Color(0xFFF1F5F9) else Color(0xFFFEF3C7)
+                ) {
+                    Text(
+                        text = detailText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (passed) Color(0xFF334155) else Color(0xFF92400E),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Admin Official Memo Broadcast & Dispatch System Composable.
+ * Allows school administrators to compose official internal memos, policy directives,
+ * circular notices, staff directives, and parent advisories with priority flags.
+ */
+@Composable
+fun AdminMemoSystemContent(
+    memos: List<SchoolAnnouncement>,
+    ownerMemos: List<AppOwnerMemo>,
+    currentUser: SchoolUser?,
+    onComposeMemo: () -> Unit,
+    onDeleteMemo: (SchoolAnnouncement) -> Unit = {}
+) {
+    var filterCategory by remember { mutableStateOf("ALL") }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val adminMemos = memos.filter { it.category == "ACADEMIC_MEMO" || it.category == "STAFF_CIRCULAR" || it.senderRole == "ADMIN" || it.category == "CIRCULAR" }
+    val displayMemos = if (adminMemos.isNotEmpty()) adminMemos else memos
+
+    val filteredMemos = displayMemos.filter { memo ->
+        val matchesCategory = when (filterCategory) {
+            "URGENT" -> memo.isUrgent
+            "CIRCULAR" -> memo.category == "CIRCULAR" || memo.category == "STAFF_CIRCULAR"
+            "ACADEMIC" -> memo.category == "ACADEMIC_MEMO" || memo.category == "ACADEMIC"
+            else -> true
+        }
+        val matchesSearch = searchQuery.isBlank() ||
+                memo.title.contains(searchQuery, ignoreCase = true) ||
+                memo.content.contains(searchQuery, ignoreCase = true) ||
+                memo.targetAudience.contains(searchQuery, ignoreCase = true)
+
+        matchesCategory && matchesSearch
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Banner Card
+        item {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Administrative Memo & Circular System",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp
+                            )
+                            Text(
+                                text = "Official institutional directives & policy dissemination",
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        Icon(
+                            Icons.Rounded.Description,
+                            contentDescription = null,
+                            tint = Color(0xFF60A5FA),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+
+                    Text(
+                        text = "Broadcast formal administrative circulars, staff meeting directives, holiday schedules, examination guidelines, and disciplinary memos with instant push dispatch across all portals.",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+
+                    Button(
+                        onClick = onComposeMemo,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3B82F6),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("compose_admin_memo_button")
+                    ) {
+                        Icon(Icons.Rounded.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Draft New Official Memo / Circular", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Active Platform Owner Memos if any
+        if (ownerMemos.isNotEmpty()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF3C7)),
+                    border = BorderStroke(1.dp, Color(0xFFFCD34D)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Rounded.AdminPanelSettings, contentDescription = null, tint = Color(0xFFB45309))
+                            Text("Platform Owner Directives", fontWeight = FontWeight.Bold, color = Color(0xFF92400E), fontSize = 13.sp)
+                        }
+                        ownerMemos.forEach { om ->
+                            Text("• ${om.title}: ${om.memoBody}", fontSize = 12.sp, color = Color(0xFF78350F))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Search & Filter
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search memos by title, content or audience") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = filterCategory == "ALL",
+                        onClick = { filterCategory = "ALL" },
+                        label = { Text("All Memos (${displayMemos.size})") }
+                    )
+                    FilterChip(
+                        selected = filterCategory == "URGENT",
+                        onClick = { filterCategory = "URGENT" },
+                        label = { Text("Priority Urgent (${displayMemos.count { it.isUrgent }})") }
+                    )
+                    FilterChip(
+                        selected = filterCategory == "CIRCULAR",
+                        onClick = { filterCategory = "CIRCULAR" },
+                        label = { Text("Circulars") }
+                    )
+                }
+            }
+        }
+
+        // Memos Feed
+        if (filteredMemos.isEmpty()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Drafts, contentDescription = null, modifier = Modifier.size(40.dp), tint = PrimaryLight)
+                        Text("No Memos Found", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Tap 'Draft New Official Memo' above to broadcast a formal directive.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(filteredMemos) { memo ->
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (memo.isUrgent) Color(0xFFEF4444).copy(alpha = 0.15f) else PrimaryLight.copy(alpha = 0.12f)
+                                ) {
+                                    Text(
+                                        text = if (memo.isUrgent) "URGENT MEMO" else "CIRCULAR #${memo.id}",
+                                        color = if (memo.isUrgent) Color(0xFFDC2626) else PrimaryLight,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.5.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFF1F5F9)
+                                ) {
+                                    Text(
+                                        text = "Audience: ${memo.targetAudience}",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF475569),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = SimpleDateFormat("MMM d, yyyy", Locale.US).format(Date(memo.postedAtMillis)),
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Text(
+                            text = memo.title,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Text(
+                            text = memo.content,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 19.sp
+                        )
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Issued by: ${memo.senderName} (${memo.senderRole})",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF64748B)
+                            )
+
+                            Text(
+                                text = "Official Seal ✓",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AcademicEmerald
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

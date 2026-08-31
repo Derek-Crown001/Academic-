@@ -21,11 +21,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.*
-import com.example.ui.components.AnnouncementCard
-import com.example.ui.components.GradeBadge
+import com.example.ui.components.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.PortalTab
 import com.example.ui.viewmodel.SchoolViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,28 +43,88 @@ fun AdminPortalScreen(
     val allClasses by viewModel.allClasses.collectAsState()
     val allSubjects by viewModel.allSubjects.collectAsState()
     val allCbtExams by viewModel.allCbtExams.collectAsState()
+    val allCbtSubmissions by viewModel.allCbtSubmissions.collectAsState()
+    val allGrades by viewModel.allGrades.collectAsState()
     val allReportCards by viewModel.allReportCards.collectAsState()
     val allAnnouncements by viewModel.allAnnouncements.collectAsState()
     val schoolProfile by viewModel.schoolProfile.collectAsState()
     val allTeacherAttendance by viewModel.allTeacherAttendance.collectAsState()
     val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsState()
 
+    val licenseConfig by viewModel.licenseConfig.collectAsState()
+    val activeOwnerMemos by viewModel.activeOwnerMemos.collectAsState()
+
     var showAddSubjectDialog by remember { mutableStateOf(false) }
     var showBroadcastAnnouncementDialog by remember { mutableStateOf(false) }
+    var showRedeemKeyDialog by remember { mutableStateOf(false) }
+    var showSubmitProofDialog by remember { mutableStateOf(false) }
+
+    // Master App Lock check
+    if (licenseConfig.isAppLocked) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            LockedFeaturePaywallCard(
+                featureName = "School Administration System",
+                lockReason = licenseConfig.lockReason,
+                config = licenseConfig,
+                onRedeemKeyClick = { showRedeemKeyDialog = true },
+                onSubmitProofClick = { showSubmitProofDialog = true }
+            )
+        }
+
+        if (showRedeemKeyDialog) {
+            RedeemLicenseKeyDialog(
+                onDismiss = { showRedeemKeyDialog = false },
+                onRedeem = { key ->
+                    viewModel.redeemLicenseKey(key) { success, _ ->
+                        if (success) showRedeemKeyDialog = false
+                    }
+                }
+            )
+        }
+
+        if (showSubmitProofDialog) {
+            SubmitPaymentProofDialog(
+                config = licenseConfig,
+                onDismiss = { showSubmitProofDialog = false },
+                onSubmit = { amt, ref, payer, phone, notes, tier ->
+                    viewModel.submitSchoolPaymentClaim(amt, ref, payer, phone, notes, tier)
+                    showSubmitProofDialog = false
+                }
+            )
+        }
+        return
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
+        // Broadcasted App Owner Memos Banner
+        activeOwnerMemos.firstOrNull()?.let { activeMemo ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                AppOwnerMemoBanner(
+                    memo = activeMemo,
+                    onPayClick = { showSubmitProofDialog = true },
+                    onDismiss = { viewModel.dismissOwnerMemo(activeMemo.id) }
+                )
+            }
+        }
         // Admin Navigation Tabs
         ScrollableTabRow(
             selectedTabIndex = when (currentTab) {
                 PortalTab.DASHBOARD -> 0
-                PortalTab.CLASSES -> 1
-                PortalTab.STAFF_ATTENDANCE -> 2
-                PortalTab.REPORT_CARDS -> 3
-                PortalTab.ADMIN_AI_ASSISTANT -> 4
-                PortalTab.SCHOOL_SETTINGS -> 5
-                PortalTab.SUBJECTS -> 6
-                PortalTab.ANNOUNCEMENTS -> 7
-                PortalTab.STAFF_CHAT, PortalTab.CLASS_CHAT_MODERATION -> 8
+                PortalTab.DATA_VERIFICATION -> 1
+                PortalTab.ADMIN_MEMO -> 2
+                PortalTab.CLASSES -> 3
+                PortalTab.STAFF_ATTENDANCE -> 4
+                PortalTab.REPORT_CARDS -> 5
+                PortalTab.ADMIN_AI_ASSISTANT -> 6
+                PortalTab.SCHOOL_SETTINGS -> 7
+                PortalTab.SUBJECTS -> 8
+                PortalTab.ANNOUNCEMENTS -> 9
+                PortalTab.STAFF_CHAT, PortalTab.CLASS_CHAT_MODERATION -> 10
                 else -> 0
             },
             edgePadding = 16.dp,
@@ -75,6 +136,18 @@ fun AdminPortalScreen(
                 onClick = { viewModel.selectTab(PortalTab.DASHBOARD) },
                 text = { Text("Overview", fontWeight = FontWeight.SemiBold) },
                 icon = { Icon(Icons.Rounded.Dashboard, contentDescription = null) }
+            )
+            Tab(
+                selected = currentTab == PortalTab.DATA_VERIFICATION,
+                onClick = { viewModel.selectTab(PortalTab.DATA_VERIFICATION) },
+                text = { Text("Data Verification", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.VerifiedUser, contentDescription = null) }
+            )
+            Tab(
+                selected = currentTab == PortalTab.ADMIN_MEMO,
+                onClick = { viewModel.selectTab(PortalTab.ADMIN_MEMO) },
+                text = { Text("Admin Memos", fontWeight = FontWeight.SemiBold) },
+                icon = { Icon(Icons.Rounded.Description, contentDescription = null) }
             )
             Tab(
                 selected = currentTab == PortalTab.CLASSES,
@@ -139,9 +212,37 @@ fun AdminPortalScreen(
                     cbtCount = allCbtExams.size,
                     reportCards = allReportCards,
                     cloudSyncStatus = cloudSyncStatus,
+                    licenseConfig = licenseConfig,
+                    onRedeemKeyClick = { showRedeemKeyDialog = true },
+                    onSubmitProofClick = { showSubmitProofDialog = true },
                     onSyncToCloud = { viewModel.syncAllDataToCloud() },
                     onNavigateToTab = { viewModel.selectTab(it) },
                     onBroadcastClick = { showBroadcastAnnouncementDialog = true }
+                )
+            }
+            PortalTab.DATA_VERIFICATION -> {
+                AdminDataVerificationDashboardContent(
+                    students = allStudents,
+                    teachers = allTeachers,
+                    classes = allClasses,
+                    subjects = allSubjects,
+                    cbtExams = allCbtExams,
+                    cbtSubmissions = allCbtSubmissions,
+                    reportCards = allReportCards,
+                    grades = allGrades,
+                    cloudSyncStatus = cloudSyncStatus,
+                    licenseConfig = licenseConfig,
+                    onRunFullAudit = { viewModel.syncAllDataToCloud() },
+                    onNavigateToTab = { viewModel.selectTab(it) }
+                )
+            }
+            PortalTab.ADMIN_MEMO -> {
+                AdminMemoSystemContent(
+                    memos = allAnnouncements,
+                    ownerMemos = activeOwnerMemos,
+                    currentUser = currentUser,
+                    onComposeMemo = { showBroadcastAnnouncementDialog = true },
+                    onDeleteMemo = { viewModel.deleteAnnouncement(it) }
                 )
             }
             PortalTab.CLASSES -> {
@@ -244,6 +345,28 @@ fun AdminPortalScreen(
             }
         )
     }
+
+    if (showRedeemKeyDialog) {
+        RedeemLicenseKeyDialog(
+            onDismiss = { showRedeemKeyDialog = false },
+            onRedeem = { key ->
+                viewModel.redeemLicenseKey(key) { success, _ ->
+                    if (success) showRedeemKeyDialog = false
+                }
+            }
+        )
+    }
+
+    if (showSubmitProofDialog) {
+        SubmitPaymentProofDialog(
+            config = licenseConfig,
+            onDismiss = { showSubmitProofDialog = false },
+            onSubmit = { amt, ref, payer, phone, notes, tier ->
+                viewModel.submitSchoolPaymentClaim(amt, ref, payer, phone, notes, tier)
+                showSubmitProofDialog = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -255,6 +378,9 @@ fun AdminDashboardContent(
     cbtCount: Int,
     reportCards: List<ReportCard>,
     cloudSyncStatus: com.example.service.firestore.CloudSyncStatus,
+    licenseConfig: AppOwnerLicenseConfig,
+    onRedeemKeyClick: () -> Unit,
+    onSubmitProofClick: () -> Unit,
     onSyncToCloud: () -> Unit,
     onNavigateToTab: (PortalTab) -> Unit,
     onBroadcastClick: () -> Unit
@@ -265,6 +391,106 @@ fun AdminDashboardContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // School Platform License & Status Card
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (licenseConfig.isAppLocked) Color(0xFFFEF2F2) else Color(0xFFF0FDF4)
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (licenseConfig.isAppLocked) Color(0xFFF87171) else Color(0xFF86EFAC)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(if (licenseConfig.isAppLocked) AcademicRose else AcademicEmerald),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (licenseConfig.isAppLocked) Icons.Rounded.Lock else Icons.Rounded.VerifiedUser,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            Column {
+                                Text(
+                                    text = "School License: ${licenseConfig.subscriptionTier.name} Plan",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                val expiryDate = SimpleDateFormat("MMM d, yyyy", Locale.US).format(Date(licenseConfig.subscriptionExpiryDateMillis))
+                                val daysLeft = maxOf(0L, (licenseConfig.subscriptionExpiryDateMillis - System.currentTimeMillis()) / (1000L * 60 * 60 * 24))
+                                Text(
+                                    text = if (licenseConfig.isAppLocked) "Status: LOCKED BY APP OWNER" else "Active • Expires $expiryDate ($daysLeft days remaining)",
+                                    fontSize = 11.5.sp,
+                                    color = if (licenseConfig.isAppLocked) AcademicRose else AcademicEmerald,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.White
+                        ) {
+                            Text(
+                                text = "Code: ${licenseConfig.schoolCode}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF334155),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onRedeemKeyClick,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.VpnKey, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Redeem Key", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = onSubmitProofClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.Payment, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Submit Payment", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
         // Welcome Banner
         item {
             Card(
@@ -537,6 +763,69 @@ fun AdminDashboardContent(
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
+
+        // Quick Navigation: Data Verification & Official Memos
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onNavigateToTab(PortalTab.DATA_VERIFICATION) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(PrimaryLight.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.VerifiedUser, contentDescription = null, tint = PrimaryLight, modifier = Modifier.size(22.dp))
+                        }
+                        Column {
+                            Text("Data Audit", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Integrity Check", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onNavigateToTab(PortalTab.ADMIN_MEMO) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AcademicAmber.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Description, contentDescription = null, tint = AcademicAmber, modifier = Modifier.size(22.dp))
+                        }
+                        Column {
+                            Text("Admin Memos", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Circular Dispatch", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         }

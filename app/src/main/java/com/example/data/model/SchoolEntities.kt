@@ -9,7 +9,8 @@ enum class SchoolRole {
     ADMIN,
     TEACHER,
     STUDENT,
-    PARENT
+    PARENT,
+    APP_OWNER
 }
 
 @Entity(tableName = "school_users")

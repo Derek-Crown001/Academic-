@@ -330,4 +330,68 @@ interface SchoolDao {
 
     @Query("DELETE FROM assignment_submissions")
     suspend fun clearAllAssignmentSubmissions()
+
+    // --- App Owner Master Licensing & Remote Control ---
+    @Query("SELECT * FROM app_owner_license_config ORDER BY schoolName ASC")
+    fun getAllLicenseConfigsFlow(): Flow<List<AppOwnerLicenseConfig>>
+
+    @Query("SELECT * FROM app_owner_license_config WHERE schoolCode = :schoolCode LIMIT 1")
+    fun getLicenseConfigFlow(schoolCode: String = "SCH-KINGSWAY-01"): Flow<AppOwnerLicenseConfig?>
+
+    @Query("SELECT * FROM app_owner_license_config WHERE schoolCode = :schoolCode LIMIT 1")
+    suspend fun getLicenseConfig(schoolCode: String = "SCH-KINGSWAY-01"): AppOwnerLicenseConfig?
+
+    @Query("DELETE FROM app_owner_license_config WHERE schoolCode = :schoolCode")
+    suspend fun deleteLicenseConfig(schoolCode: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateLicenseConfig(config: AppOwnerLicenseConfig)
+
+    // --- App Owner Memos & Invoices ---
+    @Query("SELECT * FROM app_owner_memos ORDER BY createdAtMillis DESC")
+    fun getAllOwnerMemosFlow(): Flow<List<AppOwnerMemo>>
+
+    @Query("SELECT * FROM app_owner_memos WHERE isDismissed = 0 ORDER BY createdAtMillis DESC")
+    fun getActiveOwnerMemosFlow(): Flow<List<AppOwnerMemo>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOwnerMemo(memo: AppOwnerMemo): Long
+
+    @Update
+    suspend fun updateOwnerMemo(memo: AppOwnerMemo)
+
+    @Query("UPDATE app_owner_memos SET isPaid = :isPaid WHERE id = :id")
+    suspend fun setOwnerMemoPaidStatus(id: Long, isPaid: Boolean)
+
+    @Query("UPDATE app_owner_memos SET isDismissed = 1 WHERE id = :id")
+    suspend fun dismissOwnerMemo(id: Long)
+
+    @Delete
+    suspend fun deleteOwnerMemo(memo: AppOwnerMemo)
+
+    // --- App Owner Payment Claims ---
+    @Query("SELECT * FROM app_owner_payment_claims ORDER BY submittedAtMillis DESC")
+    fun getAllPaymentClaimsFlow(): Flow<List<AppOwnerPaymentClaim>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPaymentClaim(claim: AppOwnerPaymentClaim): Long
+
+    @Update
+    suspend fun updatePaymentClaim(claim: AppOwnerPaymentClaim)
+
+    @Delete
+    suspend fun deletePaymentClaim(claim: AppOwnerPaymentClaim)
+
+    // --- App Owner License Keys ---
+    @Query("SELECT * FROM app_owner_license_keys ORDER BY generatedAtMillis DESC")
+    fun getAllLicenseKeysFlow(): Flow<List<AppOwnerLicenseKey>>
+
+    @Query("SELECT * FROM app_owner_license_keys WHERE licenseKey = :key LIMIT 1")
+    suspend fun getLicenseKey(key: String): AppOwnerLicenseKey?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLicenseKey(licenseKey: AppOwnerLicenseKey)
+
+    @Update
+    suspend fun updateLicenseKey(licenseKey: AppOwnerLicenseKey)
 }
