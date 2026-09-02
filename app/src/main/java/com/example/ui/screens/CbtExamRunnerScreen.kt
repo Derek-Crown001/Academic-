@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CbtQuestion
+import com.example.ui.components.CbtAdaptiveProgressIndicator
 import com.example.ui.components.CbtAutoSubmitNoticeBanner
 import com.example.ui.components.CbtCountdownTimer
 import com.example.ui.theme.*
@@ -237,6 +238,20 @@ fun CbtExamRunnerScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Adaptive Visual Progress Indicator tracking remaining questions, total time, and offline cache
+            item {
+                val totalSecs = if (runnerState.totalDurationSeconds > 0) runnerState.totalDurationSeconds else exam.durationMinutes * 60
+                CbtAdaptiveProgressIndicator(
+                    totalQuestions = questions.size,
+                    answeredCount = runnerState.selectedAnswers.size,
+                    flaggedCount = runnerState.flaggedQuestionIds.size,
+                    remainingSeconds = runnerState.remainingSeconds,
+                    totalDurationSeconds = totalSecs,
+                    isOfflineCached = true,
+                    onJumpToNextUnanswered = { viewModel.jumpToNextUnanswered() }
+                )
+            }
+
             // Auto-Submit Notice Banner during critical countdown
             item {
                 CbtAutoSubmitNoticeBanner(remainingSeconds = runnerState.remainingSeconds)

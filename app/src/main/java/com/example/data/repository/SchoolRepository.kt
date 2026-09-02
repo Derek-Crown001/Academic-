@@ -219,6 +219,13 @@ class SchoolRepository(
 
     suspend fun submitCbtExam(submission: CbtSubmission): Long = dao.insertCbtSubmission(submission)
 
+    // --- CBT Offline Session Active Cache ---
+    suspend fun getActiveCbtSession(sessionKey: String): CbtActiveSessionCache? = dao.getActiveCbtSession(sessionKey)
+    fun getAllActiveCbtSessionsForStudent(studentId: String): Flow<List<CbtActiveSessionCache>> = dao.getAllActiveCbtSessionsForStudent(studentId)
+    suspend fun saveActiveCbtSession(session: CbtActiveSessionCache) = dao.saveActiveCbtSession(session)
+    suspend fun clearActiveCbtSession(examId: Long, studentId: String) = dao.clearActiveCbtSession(examId, studentId)
+    suspend fun deleteActiveCbtSession(sessionKey: String) = dao.deleteActiveCbtSession(sessionKey)
+
     // --- Assignments ---
     val allAssignments: Flow<List<SchoolAssignment>> = dao.getAllAssignments()
     fun getAssignmentsForClass(className: String): Flow<List<SchoolAssignment>> = dao.getAssignmentsForClass(className)

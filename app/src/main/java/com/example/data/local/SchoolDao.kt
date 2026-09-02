@@ -123,6 +123,22 @@ interface SchoolDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCbtSubmission(submission: CbtSubmission): Long
 
+    // --- CBT Active Session Offline Cache ---
+    @Query("SELECT * FROM cbt_active_sessions WHERE sessionKey = :sessionKey LIMIT 1")
+    suspend fun getActiveCbtSession(sessionKey: String): CbtActiveSessionCache?
+
+    @Query("SELECT * FROM cbt_active_sessions WHERE studentId = :studentId")
+    fun getAllActiveCbtSessionsForStudent(studentId: String): Flow<List<CbtActiveSessionCache>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveActiveCbtSession(session: CbtActiveSessionCache)
+
+    @Query("DELETE FROM cbt_active_sessions WHERE sessionKey = :sessionKey")
+    suspend fun deleteActiveCbtSession(sessionKey: String)
+
+    @Query("DELETE FROM cbt_active_sessions WHERE examId = :examId AND studentId = :studentId")
+    suspend fun clearActiveCbtSession(examId: Long, studentId: String)
+
     // --- Assignments & Submissions ---
     @Query("SELECT * FROM school_assignments ORDER BY dueDateMillis ASC")
     fun getAllAssignments(): Flow<List<SchoolAssignment>>

@@ -365,6 +365,9 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 defaultSchools.forEach { repository.saveLicenseConfig(it) }
             }
+
+            // Seed Offline CBT Exams and Core Academic Data if Room database is fresh
+            seedOfflineCbtAndSchoolDataIfNeeded()
         }
 
         // Real-time Firestore synchronization for Chat Rooms (if school profile exists)
@@ -806,8 +809,9 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // --- CBT Runner Engine ---
+    // --- CBT Runner Engine with Offline Caching & Session Autosave ---
     fun startCbtExam(exam: CbtExam) {
+        val user = _currentUser.value ?: return
         viewModelScope.launch {
             val questions = repository.getQuestionsListForExam(exam.id)
             if (questions.isEmpty()) {
@@ -816,13 +820,48 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             val totalSeconds = exam.durationMinutes * 60
+            val sessionKey = "${exam.id}_${user.id}"
+            val cachedSession = repository.getActiveCbtSession(sessionKey)
+
+            val restoredAnswers: Map<Long, String>
+            val restoredFlagged: Set<Long>
+            val initialRemaining: Int
+            val initialIndex: Int
+
+            if (cachedSession != null && cachedSession.remainingSeconds > 0) {
+                // Restore from offline local cache
+                restoredAnswers = cachedSession.answersSerialized
+                    .split("|")
+                    .filter { it.isNotBlank() && it.contains("=") }
+                    .associate {
+                        val parts = it.split("=")
+                        (parts[0].toLongOrNull() ?: 0L) to parts.getOrElse(1) { "" }
+                    }
+                    .filterKeys { it > 0 }
+
+                restoredFlagged = cachedSession.flaggedSerialized
+                    .split("|")
+                    .mapNotNull { it.toLongOrNull() }
+                    .toSet()
+
+                initialRemaining = cachedSession.remainingSeconds
+                initialIndex = cachedSession.currentQuestionIndex.coerceIn(0, questions.size - 1)
+
+                setFeedbackMessage("💾 Offline Session Restored: Resumed exam with ${restoredAnswers.size} answered questions!")
+            } else {
+                restoredAnswers = emptyMap()
+                restoredFlagged = emptySet()
+                initialRemaining = totalSeconds
+                initialIndex = 0
+            }
+
             _cbtRunnerState.value = CbtRunnerState(
                 exam = exam,
                 questions = questions,
-                currentQuestionIndex = 0,
-                selectedAnswers = emptyMap(),
-                flaggedQuestionIds = emptySet(),
-                remainingSeconds = totalSeconds,
+                currentQuestionIndex = initialIndex,
+                selectedAnswers = restoredAnswers,
+                flaggedQuestionIds = restoredFlagged,
+                remainingSeconds = initialRemaining,
                 totalDurationSeconds = totalSeconds,
                 isRunning = true,
                 isSubmitted = false,
@@ -831,15 +870,21 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
                 submissionResult = null
             )
 
-            // Start countdown timer with 1-second ticks
+            // Start countdown timer with 1-second ticks and periodic offline autosave
             timerJob?.cancel()
             timerJob = viewModelScope.launch {
+                var tickCounter = 0
                 while (_cbtRunnerState.value.remainingSeconds > 0 && _cbtRunnerState.value.isRunning) {
                     delay(1000L)
                     val newRemaining = _cbtRunnerState.value.remainingSeconds - 1
                     _cbtRunnerState.value = _cbtRunnerState.value.copy(
                         remainingSeconds = newRemaining
                     )
+                    tickCounter++
+                    // Periodic cache save every 5 seconds to guarantee zero loss on sudden device restart
+                    if (tickCounter % 5 == 0) {
+                        saveCbtSessionToCache(_cbtRunnerState.value)
+                    }
                 }
                 if (_cbtRunnerState.value.remainingSeconds <= 0 && _cbtRunnerState.value.isRunning && !_cbtRunnerState.value.isSubmitting) {
                     // Auto submit when time runs out!
@@ -849,10 +894,36 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun saveCbtSessionToCache(state: CbtRunnerState) {
+        val exam = state.exam ?: return
+        val user = _currentUser.value ?: return
+        val sessionKey = "${exam.id}_${user.id}"
+        val answersSerialized = state.selectedAnswers.entries.joinToString("|") { "${it.key}=${it.value}" }
+        val flaggedSerialized = state.flaggedQuestionIds.joinToString("|")
+
+        viewModelScope.launch {
+            repository.saveActiveCbtSession(
+                com.example.data.model.CbtActiveSessionCache(
+                    sessionKey = sessionKey,
+                    examId = exam.id,
+                    studentId = user.id,
+                    remainingSeconds = state.remainingSeconds,
+                    totalDurationSeconds = state.totalDurationSeconds,
+                    currentQuestionIndex = state.currentQuestionIndex,
+                    answersSerialized = answersSerialized,
+                    flaggedSerialized = flaggedSerialized,
+                    lastUpdatedMillis = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
     fun selectCbtOption(questionId: Long, option: String) {
         val currentAnswers = _cbtRunnerState.value.selectedAnswers.toMutableMap()
         currentAnswers[questionId] = option
-        _cbtRunnerState.value = _cbtRunnerState.value.copy(selectedAnswers = currentAnswers)
+        val updatedState = _cbtRunnerState.value.copy(selectedAnswers = currentAnswers)
+        _cbtRunnerState.value = updatedState
+        saveCbtSessionToCache(updatedState)
     }
 
     fun toggleFlagQuestion(questionId: Long) {
@@ -862,12 +933,26 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         } else {
             flagged.add(questionId)
         }
-        _cbtRunnerState.value = _cbtRunnerState.value.copy(flaggedQuestionIds = flagged)
+        val updatedState = _cbtRunnerState.value.copy(flaggedQuestionIds = flagged)
+        _cbtRunnerState.value = updatedState
+        saveCbtSessionToCache(updatedState)
     }
 
     fun navigateToQuestion(index: Int) {
         if (index in _cbtRunnerState.value.questions.indices) {
-            _cbtRunnerState.value = _cbtRunnerState.value.copy(currentQuestionIndex = index)
+            val updatedState = _cbtRunnerState.value.copy(currentQuestionIndex = index)
+            _cbtRunnerState.value = updatedState
+            saveCbtSessionToCache(updatedState)
+        }
+    }
+
+    fun jumpToNextUnanswered() {
+        val state = _cbtRunnerState.value
+        val nextUnansweredIdx = state.questions.indexOfFirst { !state.selectedAnswers.containsKey(it.id) }
+        if (nextUnansweredIdx != -1) {
+            val updatedState = state.copy(currentQuestionIndex = nextUnansweredIdx)
+            _cbtRunnerState.value = updatedState
+            saveCbtSessionToCache(updatedState)
         }
     }
 
@@ -914,6 +999,10 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             repository.submitCbtExam(submission)
+            // Clear active offline cached session on submit
+            val sessionKey = "${exam.id}_${user.id}"
+            repository.deleteActiveCbtSession(sessionKey)
+
             // Auto-register to StudentGrade and ReportCard draft
             repository.autoRegisterCbtScoreToGrade(exam, submission)
 
@@ -2460,6 +2549,445 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
                 _firestoreSyncStatus.value = "Broadcast Failed"
                 setFeedbackMessage("⚠️ Batch broadcast failed: ${result.exceptionOrNull()?.message}")
             }
+        }
+    }
+
+    /**
+     * Seeds initial offline CBT Exams, questions, users, classes, and subjects into local Room DB.
+     * Guarantees that the app is 100% functional offline from the very first launch.
+     */
+    private suspend fun seedOfflineCbtAndSchoolDataIfNeeded() {
+        try {
+            val existingExams = repository.allCbtExams.first()
+            if (existingExams.isEmpty()) {
+                // Seed Default CBT Exam 1: Mathematics
+                val mathExam = CbtExam(
+                    id = 1L,
+                    title = "First Term Senior Mathematics CBT Examination",
+                    subjectName = "Mathematics",
+                    className = "SS 2 Gold",
+                    teacherId = "TEA-001",
+                    teacherName = "Mr. E. Okon",
+                    examType = "EXAM",
+                    durationMinutes = 30,
+                    totalMarks = 50,
+                    passMark = 25,
+                    instructions = "Answer all 10 questions. Calculations can be made on rough paper. Time is tracked automatically.",
+                    isPublished = true
+                )
+                val mathQuestions = listOf(
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 1,
+                        questionText = "Solve for x in the equation: 2^(2x + 1) - 9(2^x) + 4 = 0.",
+                        optionA = "x = -1 or x = 2",
+                        optionB = "x = 1 or x = -2",
+                        optionC = "x = 0 or x = 3",
+                        optionD = "x = 2 or x = 4",
+                        correctOption = "A",
+                        explanation = "Let y = 2^x. Then 2y^2 - 9y + 4 = 0. Factoring gives (2y - 1)(y - 4) = 0 => y = 1/2 or y = 4 => x = -1 or x = 2.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 2,
+                        questionText = "If log₁₀ 2 = 0.3010 and log₁₀ 3 = 0.4771, find the value of log₁₀ 72.",
+                        optionA = "1.8572",
+                        optionB = "1.7581",
+                        optionC = "1.9242",
+                        optionD = "1.6532",
+                        correctOption = "A",
+                        explanation = "72 = 2^3 * 3^2. log 72 = 3(log 2) + 2(log 3) = 3(0.3010) + 2(0.4771) = 0.9030 + 0.9542 = 1.8572.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 3,
+                        questionText = "Find the sum to infinity of the geometric progression: 9, 3, 1, 1/3, ...",
+                        optionA = "13.5",
+                        optionB = "12",
+                        optionC = "15",
+                        optionD = "18",
+                        correctOption = "A",
+                        explanation = "a = 9, r = 1/3. S_inf = a / (1 - r) = 9 / (1 - 1/3) = 9 / (2/3) = 13.5.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 4,
+                        questionText = "The roots of a quadratic equation are 3 and -5. Find the quadratic equation.",
+                        optionA = "x² + 2x - 15 = 0",
+                        optionB = "x² - 2x - 15 = 0",
+                        optionC = "x² + 8x + 15 = 0",
+                        optionD = "x² - 8x - 15 = 0",
+                        correctOption = "A",
+                        explanation = "(x - 3)(x + 5) = 0 => x² + 2x - 15 = 0.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 5,
+                        questionText = "In a right-angled triangle, if tan θ = 3/4, evaluate sin θ + cos θ.",
+                        optionA = "7/5",
+                        optionB = "5/7",
+                        optionC = "1/5",
+                        optionD = "12/25",
+                        correctOption = "A",
+                        explanation = "Opposite = 3, Adjacent = 4, Hypotenuse = 5. sin θ = 3/5, cos θ = 4/5. Sum = 7/5.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 6,
+                        questionText = "Differentiate y = 3x⁴ - 5x² + 7x - 2 with respect to x.",
+                        optionA = "12x³ - 10x + 7",
+                        optionB = "12x³ - 5x + 7",
+                        optionC = "7x³ - 10x + 7",
+                        optionD = "12x⁴ - 10x² + 7",
+                        correctOption = "A",
+                        explanation = "dy/dx = 4(3)x³ - 2(5)x + 7 = 12x³ - 10x + 7.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 7,
+                        questionText = "A bag contains 5 red balls and 7 blue balls. If two balls are drawn at random without replacement, find the probability that both are red.",
+                        optionA = "5/33",
+                        optionB = "5/36",
+                        optionC = "7/33",
+                        optionD = "25/144",
+                        correctOption = "A",
+                        explanation = "P(1st Red) = 5/12. P(2nd Red) = 4/11. P(Both Red) = (5/12) * (4/11) = 20/132 = 5/33.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 8,
+                        questionText = "Find the gradient of the straight line passing through points P(2, 3) and Q(6, 11).",
+                        optionA = "2",
+                        optionB = "3",
+                        optionC = "1/2",
+                        optionD = "4",
+                        correctOption = "A",
+                        explanation = "m = (y2 - y1) / (x2 - x1) = (11 - 3) / (6 - 2) = 8 / 4 = 2.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 9,
+                        questionText = "Evaluate the definite integral ∫ from 0 to 3 of (2x + 1) dx.",
+                        optionA = "12",
+                        optionB = "15",
+                        optionC = "9",
+                        optionD = "10",
+                        correctOption = "A",
+                        explanation = "∫ (2x + 1) dx = [x² + x] from 0 to 3 = (3² + 3) - 0 = 9 + 3 = 12.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 1L,
+                        questionNumber = 10,
+                        questionText = "Calculate the total surface area of a solid cylinder with radius 7cm and height 10cm. (Take π = 22/7)",
+                        optionA = "748 cm²",
+                        optionB = "616 cm²",
+                        optionC = "880 cm²",
+                        optionD = "528 cm²",
+                        correctOption = "A",
+                        explanation = "TSA = 2πr(r + h) = 2 * (22/7) * 7 * (7 + 10) = 44 * 17 = 748 cm².",
+                        marks = 5
+                    )
+                )
+                repository.createCbtExam(mathExam, mathQuestions)
+
+                // Seed Default CBT Exam 2: Physics
+                val physicsExam = CbtExam(
+                    id = 2L,
+                    title = "Senior Physics Continuous Assessment Test",
+                    subjectName = "Physics",
+                    className = "SS 2 Gold",
+                    teacherId = "TEA-003",
+                    teacherName = "Dr. K. Adeleke",
+                    examType = "TEST",
+                    durationMinutes = 20,
+                    totalMarks = 30,
+                    passMark = 15,
+                    instructions = "Choose the most appropriate answer. Constants: g = 10 m/s².",
+                    isPublished = true
+                )
+                val physicsQuestions = listOf(
+                    CbtQuestion(
+                        examId = 2L,
+                        questionNumber = 1,
+                        questionText = "A car accelerates uniformly from rest to a speed of 20 m/s in 5 seconds. Calculate the distance covered.",
+                        optionA = "50 m",
+                        optionB = "100 m",
+                        optionC = "25 m",
+                        optionD = "75 m",
+                        correctOption = "A",
+                        explanation = "s = ((u + v) / 2) * t = ((0 + 20) / 2) * 5 = 10 * 5 = 50 m.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 2L,
+                        questionNumber = 2,
+                        questionText = "Which of the following electromagnetic waves has the highest frequency?",
+                        optionA = "Gamma rays",
+                        optionB = "X-rays",
+                        optionC = "Ultraviolet rays",
+                        optionD = "Radio waves",
+                        correctOption = "A",
+                        explanation = "Gamma rays have the shortest wavelength and highest frequency in the electromagnetic spectrum.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 2L,
+                        questionNumber = 3,
+                        questionText = "An object of mass 2kg is lifted vertically through a height of 5m. Calculate the work done against gravity (g = 10 m/s²).",
+                        optionA = "100 J",
+                        optionB = "50 J",
+                        optionC = "10 J",
+                        optionD = "20 J",
+                        correctOption = "A",
+                        explanation = "Work = mgh = 2 * 10 * 5 = 100 Joules.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 2L,
+                        questionNumber = 4,
+                        questionText = "Total internal reflection occurs only when light travels from:",
+                        optionA = "A denser medium to an optically less dense medium at an angle greater than the critical angle",
+                        optionB = "A rarer medium to a denser medium",
+                        optionC = "Vacuum into glass at any angle",
+                        optionD = "Air into water at normal incidence",
+                        correctOption = "A",
+                        explanation = "Light must travel from dense to rare and the angle of incidence must exceed critical angle.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 2L,
+                        questionNumber = 5,
+                        questionText = "Calculate the electrical energy consumed by a 60W bulb operated continuously for 5 hours.",
+                        optionA = "0.30 kWh (1.08 MJ)",
+                        optionB = "300 kWh",
+                        optionC = "12 kWh",
+                        optionD = "0.06 kWh",
+                        correctOption = "A",
+                        explanation = "Energy = Power * Time = 60W * 5h = 300 Wh = 0.3 kWh = 300 * 3600 = 1.08 MJ.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 2L,
+                        questionNumber = 6,
+                        questionText = "The SI unit of magnetic flux density is:",
+                        optionA = "Tesla (T)",
+                        optionB = "Weber (Wb)",
+                        optionC = "Henry (H)",
+                        optionD = "Farad (F)",
+                        correctOption = "A",
+                        explanation = "Magnetic flux is measured in Webers (Wb), while magnetic flux density (B) is measured in Tesla (T) or Wb/m².",
+                        marks = 5
+                    )
+                )
+                repository.createCbtExam(physicsExam, physicsQuestions)
+
+                // Seed Default CBT Exam 3: English Language
+                val englishExam = CbtExam(
+                    id = 3L,
+                    title = "English Language & Lexis Comprehension CBT",
+                    subjectName = "English Language",
+                    className = "All",
+                    teacherId = "TEA-002",
+                    teacherName = "Mrs. B. Obi",
+                    examType = "EXAM",
+                    durationMinutes = 25,
+                    totalMarks = 30,
+                    passMark = 15,
+                    instructions = "Select the option that nearest in meaning or grammatically complete.",
+                    isPublished = true
+                )
+                val englishQuestions = listOf(
+                    CbtQuestion(
+                        examId = 3L,
+                        questionNumber = 1,
+                        questionText = "Choose the word nearest in meaning to METICULOUS in: 'The accountant carried out a meticulous audit of the books.'",
+                        optionA = "Painstaking",
+                        optionB = "Careless",
+                        optionC = "Hasty",
+                        optionD = "Superficial",
+                        correctOption = "A",
+                        explanation = "Meticulous means showing great attention to detail; very careful and painstaking.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 3L,
+                        questionNumber = 2,
+                        questionText = "Neither the teacher nor the students ______ present at the morning assembly.",
+                        optionA = "were",
+                        optionB = "was",
+                        optionC = "is",
+                        optionD = "has been",
+                        correctOption = "A",
+                        explanation = "In 'Neither... nor' constructions, the verb agrees with the subject closer to it ('the students' -> plural 'were').",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 3L,
+                        questionNumber = 3,
+                        questionText = "Choose the option that is opposite in meaning to CANDID: 'The witness gave a candid testimony in court.'",
+                        optionA = "Deceitful",
+                        optionB = "Frank",
+                        optionC = "Honest",
+                        optionD = "Sincere",
+                        correctOption = "A",
+                        explanation = "Candid means straightforward and truthful; its antonym is deceitful.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 3L,
+                        questionNumber = 4,
+                        questionText = "The idiom 'to beat about the bush' means:",
+                        optionA = "To avoid talking about what is important",
+                        optionB = "To cultivate crops in the forest",
+                        optionC = "To strike someone violently",
+                        optionD = "To run swiftly through bushes",
+                        correctOption = "A",
+                        explanation = "To beat about the bush means to discuss a matter without coming directly to the point.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 3L,
+                        questionNumber = 5,
+                        questionText = "Choose the correctly punctuated sentence:",
+                        optionA = "Although he was tired, he finished his assignment before going to bed.",
+                        optionB = "Although he was tired he finished his assignment, before going to bed.",
+                        optionC = "Although he was tired; he finished his assignment before going to bed.",
+                        optionD = "Although, he was tired he finished his assignment before going to bed.",
+                        correctOption = "A",
+                        explanation = "A comma is used after the introductory dependent clause 'Although he was tired'.",
+                        marks = 5
+                    ),
+                    CbtQuestion(
+                        examId = 3L,
+                        questionNumber = 6,
+                        questionText = "Identify the figure of speech in: 'The wind whispered soothing melodies through the quiet pines.'",
+                        optionA = "Personification",
+                        optionB = "Simile",
+                        optionC = "Hyperbole",
+                        optionD = "Oxymoron",
+                        correctOption = "A",
+                        explanation = "Giving human attributes (whispering melodies) to inanimate objects (wind) is personification.",
+                        marks = 5
+                    )
+                )
+                repository.createCbtExam(englishExam, englishQuestions)
+            }
+
+            // Seed default users if empty
+            val existingUsers = repository.allUsers.first()
+            if (existingUsers.isEmpty()) {
+                val defaultUsers = listOf(
+                    SchoolUser(
+                        id = "ADM-001",
+                        name = "Dr. C. Adebayo",
+                        role = SchoolRole.ADMIN,
+                        email = "admin@kingsway.edu",
+                        phone = "+234 802 123 4567",
+                        passcode = "admin123",
+                        avatarColorHex = "#1E3A8A"
+                    ),
+                    SchoolUser(
+                        id = "TEA-001",
+                        name = "Mr. E. Okon",
+                        role = SchoolRole.TEACHER,
+                        email = "okon@kingsway.edu",
+                        phone = "+234 803 234 5678",
+                        passcode = "teach123",
+                        assignedSubjects = "Mathematics, Further Mathematics",
+                        avatarColorHex = "#0F766E"
+                    ),
+                    SchoolUser(
+                        id = "TEA-002",
+                        name = "Mrs. B. Obi",
+                        role = SchoolRole.TEACHER,
+                        email = "obi@kingsway.edu",
+                        phone = "+234 805 345 6789",
+                        passcode = "teach123",
+                        assignedSubjects = "English Language, Literature",
+                        avatarColorHex = "#7C3AED"
+                    ),
+                    SchoolUser(
+                        id = "TEA-003",
+                        name = "Dr. K. Adeleke",
+                        role = SchoolRole.TEACHER,
+                        email = "adeleke@kingsway.edu",
+                        phone = "+234 807 456 7890",
+                        passcode = "teach123",
+                        assignedSubjects = "Physics, Chemistry",
+                        avatarColorHex = "#D97706"
+                    ),
+                    SchoolUser(
+                        id = "STD-101",
+                        name = "Alex Rivera",
+                        role = SchoolRole.STUDENT,
+                        email = "alex.rivera@kingsway.edu",
+                        phone = "+234 809 567 8901",
+                        passcode = "1234",
+                        className = "SS 2 Gold",
+                        guardianName = "Chief M. Rivera",
+                        guardianPhone = "+234 803 999 8888",
+                        avatarColorHex = "#2563EB"
+                    ),
+                    SchoolUser(
+                        id = "STD-102",
+                        name = "Chinaza Okafor",
+                        role = SchoolRole.STUDENT,
+                        email = "chinaza.okafor@kingsway.edu",
+                        phone = "+234 811 678 9012",
+                        passcode = "1234",
+                        className = "SS 2 Gold",
+                        guardianName = "Dr. P. Okafor",
+                        guardianPhone = "+234 803 888 7777",
+                        avatarColorHex = "#EC4899"
+                    ),
+                    SchoolUser(
+                        id = "PAR-201",
+                        name = "Chief M. Rivera",
+                        role = SchoolRole.PARENT,
+                        email = "rivera.senior@gmail.com",
+                        phone = "+234 803 999 8888",
+                        passcode = "1234",
+                        studentChildId = "STD-101",
+                        studentChildName = "Alex Rivera",
+                        avatarColorHex = "#7C3AED"
+                    )
+                )
+                defaultUsers.forEach { repository.saveUser(it) }
+            }
+
+            // Seed default classes and subjects if empty
+            val existingClasses = repository.allClasses.first()
+            if (existingClasses.isEmpty()) {
+                val defaultClasses = listOf(
+                    SchoolClass(name = "SS 2 Gold", level = "SS 2", arm = "Gold", classTeacherId = "TEA-001", classTeacherName = "Mr. E. Okon", studentCount = 38, room = "Hall A2"),
+                    SchoolClass(name = "SS 2 Diamond", level = "SS 2", arm = "Diamond", classTeacherId = "TEA-002", classTeacherName = "Mrs. B. Obi", studentCount = 35, room = "Hall A3"),
+                    SchoolClass(name = "SS 1 Silver", level = "SS 1", arm = "Silver", classTeacherId = "TEA-003", classTeacherName = "Dr. K. Adeleke", studentCount = 42, room = "Hall B1")
+                )
+                defaultClasses.forEach { repository.addClass(it) }
+            }
+
+            val existingSubjects = repository.allSubjects.first()
+            if (existingSubjects.isEmpty()) {
+                val defaultSubjects = listOf(
+                    SchoolSubject(name = "Mathematics", code = "MTH 201", classLevel = "SS 2", teacherName = "Mr. E. Okon", teacherId = "TEA-001", colorHex = "#2563EB"),
+                    SchoolSubject(name = "English Language", code = "ENG 201", classLevel = "SS 2", teacherName = "Mrs. B. Obi", teacherId = "TEA-002", colorHex = "#7C3AED"),
+                    SchoolSubject(name = "Physics", code = "PHY 201", classLevel = "SS 2", teacherName = "Dr. K. Adeleke", teacherId = "TEA-003", colorHex = "#0F766E"),
+                    SchoolSubject(name = "Chemistry", code = "CHM 201", classLevel = "SS 2", teacherName = "Dr. K. Adeleke", teacherId = "TEA-003", colorHex = "#D97706"),
+                    SchoolSubject(name = "Biology", code = "BIO 201", classLevel = "SS 2", teacherName = "Mrs. B. Obi", teacherId = "TEA-002", colorHex = "#16A34A")
+                )
+                defaultSubjects.forEach { repository.addSubject(it) }
+            }
+        } catch (e: Exception) {
+            // Non-fatal seed exception
         }
     }
 }

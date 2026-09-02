@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.SchoolRole
 import com.example.data.model.SchoolUser
+import com.example.ui.components.OwnerApkDownloadDialog
 import com.example.ui.components.RoleBadge
 import com.example.ui.components.SecurityPinDialog
 import com.example.ui.components.UserAvatar
@@ -92,6 +93,7 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
 
     val snackbarHostState = remember { SnackbarHostState() }
     var showRoleSwitchDialog by remember { mutableStateOf(false) }
+    var showDownloadApkDialog by remember { mutableStateOf(false) }
     var pendingRoleForPin by remember { mutableStateOf<SchoolRole?>(null) }
     var pendingUserForPin by remember { mutableStateOf<SchoolUser?>(null) }
 
@@ -144,12 +146,12 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
                                 .background(
                                     Brush.linearGradient(
                                         colors = listOf(primaryHeaderColor, AcademicViolet)
@@ -161,31 +163,49 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                                 imageVector = Icons.Rounded.School,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
 
-                        Column {
+                        Column(
+                            verticalArrangement = Arrangement.Center
+                        ) {
                             Text(
                                 text = "AcademiaTrack",
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontSize = 14.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onBackground
                             )
                             Text(
                                 text = "${currentRole.name.lowercase().replaceFirstChar { it.uppercase() }} Portal",
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1
                             )
                         }
                     }
                 },
                 actions = {
+                    // Download Owner & School APK on GitHub
+                    IconButton(
+                        onClick = { showDownloadApkDialog = true },
+                        modifier = Modifier.testTag("github_apk_download_topbar_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CloudDownload,
+                            contentDescription = "Download APKs on GitHub",
+                            tint = Color(0xFFD97706)
+                        )
+                    }
+
                     // Profile Photo Avatar
                     UserAvatar(
                         user = currentUser,
-                        size = 32.dp,
+                        size = 30.dp,
                         onUploadClick = { photoPickerLauncher.launch("image/*") }
                     )
 
@@ -208,7 +228,7 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                             RoleBadge(role = currentRole)
                             Text(
                                 text = currentUser?.name?.split(" ")?.firstOrNull() ?: "User",
-                                fontSize = 11.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = primaryHeaderColor,
                                 maxLines = 1
@@ -217,7 +237,7 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                                 imageVector = Icons.Rounded.SwapHoriz,
                                 contentDescription = "Switch Role",
                                 tint = primaryHeaderColor,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                         }
                     }
@@ -233,8 +253,6 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-
-                    Spacer(modifier = Modifier.width(2.dp))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -290,6 +308,7 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                     Spacer(modifier = Modifier.height(4.dp))
 
                     val demoRoles = listOf(
+                        Triple(SchoolRole.APP_OWNER, "Owner Master Console [PIN Secured]", "Platform Owner SaaS & Remote Control"),
                         Triple(SchoolRole.ADMIN, "Admin Corner [PIN Secured]", "Dr. C. Adebayo (Principal / School Head)"),
                         Triple(SchoolRole.TEACHER, "Teacher Corner [PIN Secured]", "Mr. David Okon (Maths & Physics Faculty)"),
                         Triple(SchoolRole.STUDENT, "Student Portal", "Chidinma Nwosu (SS 2 Gold) - CBT & Grades"),
@@ -314,7 +333,7 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                                 .fillMaxWidth()
                                 .clickable {
                                     showRoleSwitchDialog = false
-                                    if (role == SchoolRole.ADMIN || role == SchoolRole.TEACHER) {
+                                    if (role == SchoolRole.ADMIN || role == SchoolRole.TEACHER || role == SchoolRole.APP_OWNER) {
                                         pendingRoleForPin = role
                                         pendingUserForPin = allUsers.find { it.role == role }
                                     } else {
@@ -353,7 +372,7 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                                     Text(text = desc, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
 
-                                if (role == SchoolRole.ADMIN || role == SchoolRole.TEACHER) {
+                                if (role == SchoolRole.ADMIN || role == SchoolRole.TEACHER || role == SchoolRole.APP_OWNER) {
                                     Icon(
                                         imageVector = Icons.Rounded.Lock,
                                         contentDescription = "Secured",
@@ -366,6 +385,23 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
+
+                    // Download Owner APK from GitHub Button
+                    Button(
+                        onClick = {
+                            showRoleSwitchDialog = false
+                            showDownloadApkDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dialog_download_owner_apk_btn")
+                    ) {
+                        Icon(Icons.Rounded.CloudDownload, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Download Owner APK (GitHub)", fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 12.5.sp)
+                    }
 
                     // Sign Out Button from dialog
                     OutlinedButton(
@@ -387,6 +423,16 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                 TextButton(onClick = { showRoleSwitchDialog = false }) {
                     Text("Close")
                 }
+            }
+        )
+    }
+
+    // Owner APK GitHub Download Dialog
+    if (showDownloadApkDialog) {
+        OwnerApkDownloadDialog(
+            onDismiss = { showDownloadApkDialog = false },
+            onShowToast = { msg ->
+                viewModel.setFeedbackMessage(msg)
             }
         )
     }

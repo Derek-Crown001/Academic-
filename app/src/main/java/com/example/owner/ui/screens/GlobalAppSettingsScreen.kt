@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.AppOwnerLicenseConfig
 import com.example.owner.ui.components.OwnerThemeColors
+import com.example.ui.components.OwnerApkDownloadDialog
 import com.example.ui.viewmodel.SchoolViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,6 +46,7 @@ fun GlobalAppSettingsScreen(
     var geminiAiGatewayEnabled by remember { mutableStateOf(true) }
     var autoLockArrearsEnabled by remember { mutableStateOf(true) }
     var showBackupSuccessDialog by remember { mutableStateOf(false) }
+    var showDownloadApkDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -395,7 +397,102 @@ fun GlobalAppSettingsScreen(
                     }
                 }
             }
+            // Section 6: Standalone APK Distribution & GitHub Releases
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = OwnerThemeColors.CardDark),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, OwnerThemeColors.AmberPrimary.copy(alpha = 0.6f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(OwnerThemeColors.AmberPrimary.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Rounded.CloudDownload,
+                                    contentDescription = null,
+                                    tint = OwnerThemeColors.AmberLight,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    "GitHub APK Distribution Hub",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = OwnerThemeColors.TextPrimary
+                                )
+                                Text(
+                                    "Download Owner Master & School Client Binaries",
+                                    fontSize = 10.5.sp,
+                                    color = OwnerThemeColors.AmberLight
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = OwnerThemeColors.AmberPrimary.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = "CI/CD RELEASES",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                color = OwnerThemeColors.AmberLight,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        "Access direct download links and standalone release packages compiled automatically for the Platform Owner and client schools.",
+                        fontSize = 11.5.sp,
+                        color = OwnerThemeColors.TextSecondary
+                    )
+
+                    Button(
+                        onClick = { showDownloadApkDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = OwnerThemeColors.AmberPrimary),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("owner_settings_download_apk_btn")
+                    ) {
+                        Icon(Icons.Rounded.Download, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Download Owner APK on GitHub", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Black)
+                    }
+                }
+            }
         }
+    }
+
+    if (showDownloadApkDialog) {
+        OwnerApkDownloadDialog(
+            onDismiss = { showDownloadApkDialog = false },
+            onShowToast = { msg ->
+                viewModel.setFeedbackMessage(msg)
+            }
+        )
     }
 
     if (showBackupSuccessDialog) {

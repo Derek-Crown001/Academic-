@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.OwnerConsoleActivity
 import com.example.data.model.SchoolRole
+import com.example.ui.components.OwnerApkDownloadDialog
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.SchoolViewModel
 
@@ -52,6 +53,7 @@ fun LoginScreen(
 
     var selectedRole by remember { mutableStateOf(SchoolRole.ADMIN) }
     var isAdminRegisterMode by remember { mutableStateOf(true) }
+    var showDownloadApkDialog by remember { mutableStateOf(false) }
 
     // Multi-Tenant Inputs
     var schoolCodeInput by remember { mutableStateOf("") }
@@ -573,9 +575,132 @@ fun LoginScreen(
                 }
 
                 item {
+                    // Platform Owner Master Console & Separate GitHub APK Download Card
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFD97706).copy(alpha = 0.25f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.AdminPanelSettings,
+                                            contentDescription = null,
+                                            tint = Color(0xFFF59E0B),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = "Platform Owner & APK Distribution",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp,
+                                        color = Color.White
+                                    )
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFFD97706).copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = "GITHUB",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFFFBBF24),
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = "Need the standalone Owner Master APK or School Client APK? Download release builds directly from GitHub.",
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { showDownloadApkDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .testTag("login_download_owner_apk_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CloudDownload,
+                                        contentDescription = null,
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Download Owner APK",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.5.sp,
+                                        color = Color.Black
+                                    )
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        selectedRole = SchoolRole.APP_OWNER
+                                        viewModel.clearAuthError()
+                                    },
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF59E0B)),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD97706)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .weight(0.85f)
+                                        .height(38.dp)
+                                ) {
+                                    Text(
+                                        text = "Owner Login",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 11.5.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+        }
+
+        if (showDownloadApkDialog) {
+            OwnerApkDownloadDialog(
+                onDismiss = { showDownloadApkDialog = false },
+                onShowToast = { msg ->
+                    viewModel.setFeedbackMessage(msg)
+                }
+            )
         }
     }
 }

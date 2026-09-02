@@ -123,6 +123,19 @@ data class CbtSubmission(
     val answersRecord: String = "" // e.g. "1:A|2:C|3:B"
 )
 
+@Entity(tableName = "cbt_active_sessions")
+data class CbtActiveSessionCache(
+    @PrimaryKey val sessionKey: String, // e.g. "examId_studentId"
+    val examId: Long,
+    val studentId: String,
+    val remainingSeconds: Int,
+    val totalDurationSeconds: Int,
+    val currentQuestionIndex: Int,
+    val answersSerialized: String, // e.g. "qId1=A|qId2=C"
+    val flaggedSerialized: String, // e.g. "qId1|qId3"
+    val lastUpdatedMillis: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "school_assignments")
 data class SchoolAssignment(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

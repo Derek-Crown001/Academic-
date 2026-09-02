@@ -37,6 +37,7 @@ import androidx.compose.ui.window.Dialog
 import com.example.OwnerConsoleActivity
 import com.example.R
 import com.example.data.model.*
+import com.example.ui.components.OwnerApkDownloadDialog
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.SchoolViewModel
 import java.text.SimpleDateFormat
@@ -76,6 +77,7 @@ fun AppOwnerConsoleScreen(viewModel: SchoolViewModel) {
     var lockReasonDraft by remember(selectedSchoolConfig) { mutableStateOf(selectedSchoolConfig.lockReason) }
     var showAddSchoolDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showDownloadApkDialog by remember { mutableStateOf(false) }
 
     var generatedKey by remember { mutableStateOf<String?>(null) }
     var selectedTierForGen by remember { mutableStateOf(SubscriptionTier.ANNUAL) }
@@ -304,6 +306,20 @@ fun AppOwnerConsoleScreen(viewModel: SchoolViewModel) {
                                 Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text("Open Standalone Window", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            // Download Owner APK from GitHub
+                            Button(
+                                onClick = { showDownloadApkDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f)),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("owner_screen_download_apk_btn")
+                            ) {
+                                Icon(Icons.Rounded.CloudDownload, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Download APK (GitHub)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             }
                         }
                     }
@@ -1896,6 +1912,16 @@ fun AppOwnerConsoleScreen(viewModel: SchoolViewModel) {
                 TextButton(onClick = { showDeleteConfirmDialog = false }) {
                     Text("Cancel")
                 }
+            }
+        )
+    }
+
+    // Modal: GitHub Releases APK Distribution Dialog
+    if (showDownloadApkDialog) {
+        OwnerApkDownloadDialog(
+            onDismiss = { showDownloadApkDialog = false },
+            onShowToast = { msg ->
+                viewModel.setFeedbackMessage(msg)
             }
         )
     }

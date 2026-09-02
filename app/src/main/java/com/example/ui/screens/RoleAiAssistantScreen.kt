@@ -43,7 +43,10 @@ import com.example.data.model.SchoolRole
 import com.example.data.model.SchoolUser
 import com.example.service.gemini.GeminiChatMessage
 import com.example.service.gemini.GeminiChatModels
+import com.example.ui.components.WhatsAppVoiceNoteBubble
+import com.example.ui.components.WhatsAppVoiceNoteInputBar
 import com.example.util.AiTextFormatter
+import com.example.util.VoiceNoteRecorder
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.SchoolViewModel
 import java.text.SimpleDateFormat
@@ -66,12 +69,46 @@ fun RoleAiAssistantScreen(
     var userPrompt by remember { mutableStateOf("") }
     var showLiveVoiceModal by remember { mutableStateOf(false) }
     var currentlySpeakingId by remember { mutableStateOf<String?>(null) }
+    var ttsPlaybackSpeed by remember { mutableStateOf(1.0f) }
 
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val listState = rememberLazyListState()
 
-    // Initialize TextToSpeech engine
+    // Initialize WhatsApp Voice Note Recorder
+    val voiceRecorder = remember { VoiceNoteRecorder(context) }
+    val isRecording by voiceRecorder.isRecording.collectAsState()
+    val recordingDuration by voiceRecorder.recordingDurationSeconds.collectAsState()
+    val recordingAmplitude by voiceRecorder.amplitude.collectAsState()
+    val recordedTranscribedText by voiceRecorder.transcribedText.collectAsState()
+
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceRecorder.destroy()
+        }
+    }
+
+    // Audio Permission Launcher
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            voiceRecorder.startRecording(
+                onResult = { recognizedText ->
+                    if (recognizedText.isNotBlank()) {
+                        viewModel.sendAiChatMessage(recognizedText, currentRole)
+                    }
+                },
+                onError = { err ->
+                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                }
+            )
+        } else {
+            Toast.makeText(context, "Microphone permission required for voice notes", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // TextToSpeech engine
     var ttsEngine by remember { mutableStateOf<TextToSpeech?>(null) }
     var isTtsReady by remember { mutableStateOf(false) }
 
@@ -97,50 +134,29 @@ fun RoleAiAssistantScreen(
                 currentlySpeakingId = null
             } else {
                 tts.stop()
+                tts.setSpeechRate(ttsPlaybackSpeed)
                 currentlySpeakingId = id
-                // Clean markdown artifacts for smoother speech
-                val cleanSpeech = text
-                    .replace("*", "")
-                    .replace("#", "")
-                    .replace("`", "")
+                val cleanSpeech = AiTextFormatter.toPlainText(text)
                 tts.speak(cleanSpeech, TextToSpeech.QUEUE_FLUSH, null, id)
             }
         }
     }
 
-    // Speech-to-Text Voice Dictation Launcher
-    val speechLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val spokenSpans = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            val recognizedText = spokenSpans?.firstOrNull()
-            if (!recognizedText.isNullOrBlank()) {
-                userPrompt = recognizedText
-                // Auto send voice queries for seamless conversational speed
-                viewModel.sendAiChatMessage(recognizedText, currentRole)
-            }
+    val cycleSpeechRate: () -> Unit = {
+        ttsPlaybackSpeed = when (ttsPlaybackSpeed) {
+            1.0f -> 1.5f
+            1.5f -> 2.0f
+            else -> 1.0f
         }
-    }
-
-    val launchVoiceRecognizer = {
-        try {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to ${currentRole.name.lowercase().replaceFirstChar { it.uppercase() }} AI Assistant...")
-            }
-            speechLauncher.launch(intent)
-        } catch (e: Exception) {
-            Toast.makeText(context, "Voice speech recognition is not supported on this device", Toast.LENGTH_SHORT).show()
-        }
+        ttsEngine?.setSpeechRate(ttsPlaybackSpeed)
+        Toast.makeText(context, "Audio playback speed: ${ttsPlaybackSpeed}x", Toast.LENGTH_SHORT).show()
     }
 
     val roleTitle = when (currentRole) {
         SchoolRole.APP_OWNER -> "App Owner SaaS Executive AI Advisor"
         SchoolRole.ADMIN -> "Admin Executive AI Advisor"
         SchoolRole.TEACHER -> "Teacher's Pedagogical AI Assistant"
-        SchoolRole.STUDENT -> "24/7 Personal Study & CBT AI Tutor"
+        SchoolRole.STUDENT -> "24/7 Universal AI Tutor & Assistant"
         SchoolRole.PARENT -> "Parent School Liaison AI Advisor"
     }
 
@@ -148,7 +164,7 @@ fun RoleAiAssistantScreen(
         SchoolRole.APP_OWNER -> "Draft school payment invoices, license keys, suspension notices & terms"
         SchoolRole.ADMIN -> "Draft official circulars, timetables, commendation letters & policy memos"
         SchoolRole.TEACHER -> "Create lesson notes, CBT exam questions, report card remarks & worksheets"
-        SchoolRole.STUDENT -> "Step-by-step problem solver, practice CBT quizzes & study timetables"
+        SchoolRole.STUDENT -> "Answers any question: Coding, Math, Science, Literature, History & Daily Advice"
         SchoolRole.PARENT -> "Home study routines, report card interpretation & progress tracking"
     }
 
@@ -183,10 +199,12 @@ fun RoleAiAssistantScreen(
             "📋 Prepare English Literature Essay Questions & Marking Scheme"
         )
         SchoolRole.STUDENT -> listOf(
-            "🧠 Explain Quadratic Formula derivation with step-by-step examples",
+            "💡 Explain Quantum Computing with simple everyday analogies",
+            "💻 Write a Python program to filter and sort student records",
+            "🧠 Step-by-step solution for 3x² + 7x + 2 = 0",
             "⚡ Generate a 3-Question Practice Quiz on Biology (Cell Organelles)",
             "🗓️ Create a 7-Day Balanced Study Timetable for upcoming exams",
-            "📚 Step-by-step solution for calculating Electric Resistance and Ohm's Law",
+            "🚀 How do rockets escape Earth's gravitational pull?",
             "✍️ Essay outline for 'The Role of Youth in National Development'"
         )
         SchoolRole.PARENT -> listOf(
@@ -216,14 +234,14 @@ fun RoleAiAssistantScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 720.dp)
+                .widthIn(max = 700.dp)
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Hero Header Card with Live Voice Conversation CTA
             Card(
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = roleThemeColor),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -231,13 +249,13 @@ fun RoleAiAssistantScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(14.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(46.dp)
+                            .size(40.dp)
                             .clip(CircleShape)
                             .background(Color.White.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
@@ -246,47 +264,49 @@ fun RoleAiAssistantScreen(
                             imageVector = Icons.Rounded.AutoAwesome,
                             contentDescription = "AI Assistant",
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = roleTitle,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 15.sp,
-                            color = Color.White
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            color = Color.White,
+                            maxLines = 1
                         )
                         Text(
                             text = roleSubtitle,
-                            fontSize = 11.sp,
+                            fontSize = 10.5.sp,
                             color = Color.White.copy(alpha = 0.85f),
-                            lineHeight = 15.sp
+                            lineHeight = 14.sp,
+                            maxLines = 1
                         )
                     }
 
                     // Voice Live Mode Button
                     Surface(
-                        shape = RoundedCornerShape(20.dp),
+                        shape = RoundedCornerShape(16.dp),
                         color = Color.White.copy(alpha = 0.22f),
                         modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(16.dp))
                             .clickable { showLiveVoiceModal = true }
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
                             Icon(
                                 Icons.Rounded.GraphicEq,
                                 contentDescription = "Voice Mode",
                                 tint = Color.White,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                             Text(
                                 text = "Live Voice",
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
@@ -301,7 +321,7 @@ fun RoleAiAssistantScreen(
                                 viewModel.clearAiChatHistory()
                             },
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(30.dp)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.2f))
                         ) {
@@ -309,7 +329,7 @@ fun RoleAiAssistantScreen(
                                 Icons.Rounded.DeleteSweep,
                                 contentDescription = "Clear Chat History",
                                 tint = Color.White,
-                                modifier = Modifier.size(17.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                     }
@@ -318,13 +338,13 @@ fun RoleAiAssistantScreen(
 
             // Model Switcher & Google Search Grounding Control Bar
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     // Models Selector Row
                     Row(
@@ -334,7 +354,7 @@ fun RoleAiAssistantScreen(
                     ) {
                         Text(
                             text = "Model Engine:",
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -342,14 +362,14 @@ fun RoleAiAssistantScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             val models = listOf(
                                 GeminiChatModels.GEMINI_3_5_FLASH to "3.5 Flash",
-                                GeminiChatModels.GEMINI_3_1_PRO to "3.1 Pro (Complex)",
+                                GeminiChatModels.GEMINI_3_1_PRO to "3.1 Pro",
                                 GeminiChatModels.GEMINI_3_1_FLASH_LITE to "Flash Lite"
                             )
 
                             models.forEach { (modelKey, label) ->
                                 val isSelected = selectedModel == modelKey
                                 Surface(
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(6.dp),
                                     color = if (isSelected) roleThemeColor else MaterialTheme.colorScheme.surface,
                                     border = if (!isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)) else null,
                                     modifier = Modifier.clickable {
@@ -358,10 +378,10 @@ fun RoleAiAssistantScreen(
                                 ) {
                                     Text(
                                         text = label,
-                                        fontSize = 10.5.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                         color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                                     )
                                 }
                             }
@@ -376,17 +396,17 @@ fun RoleAiAssistantScreen(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(
                                 Icons.Rounded.TravelExplore,
                                 contentDescription = null,
                                 tint = if (isSearchGroundingEnabled) Color(0xFF16A34A) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                             Text(
                                 text = "Google Search Grounding",
-                                fontSize = 11.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -397,21 +417,22 @@ fun RoleAiAssistantScreen(
                             onClick = { viewModel.toggleSearchGrounding(!isSearchGroundingEnabled) },
                             label = {
                                 Text(
-                                    text = if (isSearchGroundingEnabled) "Live Web Active" else "Disabled",
-                                    fontSize = 11.sp,
+                                    text = if (isSearchGroundingEnabled) "Live Web On" else "Off",
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             },
                             leadingIcon = {
                                 if (isSearchGroundingEnabled) {
-                                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(12.dp))
                                 }
                             },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Color(0xFF16A34A).copy(alpha = 0.15f),
                                 selectedLabelColor = Color(0xFF15803D),
                                 selectedLeadingIconColor = Color(0xFF15803D)
-                            )
+                            ),
+                            modifier = Modifier.height(28.dp)
                         )
                     }
                 }
@@ -419,11 +440,11 @@ fun RoleAiAssistantScreen(
 
             // Quick Prompt Suggestions (shown when empty or for inspiration)
             if (chatHistory.isEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "Quick Starters & Presets",
+                        text = "Quick Starters & Ideas",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
@@ -433,7 +454,7 @@ fun RoleAiAssistantScreen(
                     ) {
                         items(quickPrompts) { promptText ->
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, roleThemeColor.copy(alpha = 0.2f)),
                                 modifier = Modifier.clickable {
@@ -442,19 +463,19 @@ fun RoleAiAssistantScreen(
                                 }
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Icon(
                                         Icons.Rounded.Lightbulb,
                                         contentDescription = null,
                                         tint = roleThemeColor,
-                                        modifier = Modifier.size(14.dp)
+                                        modifier = Modifier.size(12.dp)
                                     )
                                     Text(
                                         text = promptText,
-                                        fontSize = 11.5.sp,
+                                        fontSize = 10.5.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -467,9 +488,9 @@ fun RoleAiAssistantScreen(
 
             // Multi-Turn Chat Conversation Area
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
@@ -477,51 +498,51 @@ fun RoleAiAssistantScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(12.dp)
+                        .padding(10.dp)
                 ) {
                     if (chatHistory.isEmpty() && !isAiLoading) {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(24.dp),
+                                .padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(56.dp)
-                                    .clip(CircleShape)
-                                    .background(roleThemeColor.copy(alpha = 0.12f)),
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(roleThemeColor.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     Icons.Rounded.ChatBubbleOutline,
                                     contentDescription = null,
-                                    modifier = Modifier.size(28.dp),
+                                    modifier = Modifier.size(24.dp),
                                     tint = roleThemeColor
                                 )
                             }
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Start a Multi-Turn Chat with Gemini",
-                                fontSize = 14.sp,
+                                text = "Ask Any Question (Universal AI)",
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(3.dp))
                             Text(
-                                text = "Ask questions, generate curriculum resources, or speak using the microphone. Gemini maintains continuous conversation context throughout your session.",
-                                fontSize = 12.sp,
+                                text = "Type or tap the green WhatsApp mic button to speak. Gemini answers general knowledge, coding, math, science, and school topics with full conversational context.",
+                                fontSize = 11.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                lineHeight = 16.sp
+                                lineHeight = 15.sp
                             )
                         }
                     } else {
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             items(chatHistory, key = { it.id }) { message ->
                                 val cleanMessageText = remember(message.text) { AiTextFormatter.toPlainText(message.text) }
@@ -529,14 +550,16 @@ fun RoleAiAssistantScreen(
                                     message = message,
                                     roleThemeColor = roleThemeColor,
                                     isSpeaking = currentlySpeakingId == message.id,
+                                    playbackSpeed = ttsPlaybackSpeed,
                                     onToggleSpeak = {
                                         speakText(message.id, cleanMessageText)
                                     },
+                                    onToggleSpeed = cycleSpeechRate,
                                     onCopy = {
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         val clip = ClipData.newPlainText("AI Message", cleanMessageText)
                                         clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "Copied plain text to clipboard!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Copied text to clipboard!", Toast.LENGTH_SHORT).show()
                                     },
                                     onOpenUrl = { url ->
                                         try {
@@ -561,74 +584,39 @@ fun RoleAiAssistantScreen(
                 }
             }
 
-            // Input Bar with Voice Recognition Mic & Send Button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Voice Dictation Button
-                IconButton(
-                    onClick = { launchVoiceRecognizer() },
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .testTag("ai_voice_dictate_button")
-                ) {
-                    Icon(
-                        Icons.Rounded.Mic,
-                        contentDescription = "Voice Input",
-                        tint = roleThemeColor,
-                        modifier = Modifier.size(22.dp)
-                    )
+            // WhatsApp Voice Note & Text Input Bar
+            WhatsAppVoiceNoteInputBar(
+                userPrompt = userPrompt,
+                onPromptChange = { userPrompt = it },
+                isRecording = isRecording,
+                recordingDurationSeconds = recordingDuration,
+                amplitude = recordingAmplitude,
+                isAiLoading = isAiLoading,
+                accentColor = roleThemeColor,
+                placeholderText = when (currentRole) {
+                    SchoolRole.APP_OWNER -> "Ask anything (invoices, SaaS policy, general AI)..."
+                    SchoolRole.ADMIN -> "Ask anything (circulars, calendar, operations)..."
+                    SchoolRole.TEACHER -> "Ask anything (lesson plans, CBT questions, science)..."
+                    SchoolRole.STUDENT -> "Ask anything (Math, Python, Physics, History)..."
+                    SchoolRole.PARENT -> "Ask anything (academics, CBT tips, guidance)..."
+                },
+                onStartRecording = {
+                    audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                },
+                onCancelRecording = {
+                    voiceRecorder.cancelRecording()
+                },
+                onSendVoiceNote = {
+                    voiceRecorder.stopAndSend()
+                },
+                onSendTextMessage = {
+                    if (userPrompt.isNotBlank() && !isAiLoading) {
+                        val textToSend = userPrompt
+                        userPrompt = ""
+                        viewModel.sendAiChatMessage(textToSend, currentRole)
+                    }
                 }
-
-                OutlinedTextField(
-                    value = userPrompt,
-                    onValueChange = { userPrompt = it },
-                    placeholder = {
-                        Text(
-                            when (currentRole) {
-                                SchoolRole.APP_OWNER -> "e.g. Draft payment invoice memo for school renewal..."
-                                SchoolRole.ADMIN -> "e.g. Write mid-term memo for parents..."
-                                SchoolRole.TEACHER -> "e.g. Generate 5 CBT questions on Physics kinematics..."
-                                SchoolRole.STUDENT -> "e.g. How do I solve 2x^2 + 5x - 3 = 0?..."
-                                SchoolRole.PARENT -> "e.g. How can I support my child in chemistry?..."
-                            },
-                            fontSize = 12.5.sp
-                        )
-                    },
-                    shape = RoundedCornerShape(16.dp),
-                    maxLines = 3,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("ai_prompt_input")
-                )
-
-                IconButton(
-                    onClick = {
-                        if (userPrompt.isNotBlank() && !isAiLoading) {
-                            val textToSend = userPrompt
-                            userPrompt = ""
-                            viewModel.sendAiChatMessage(textToSend, currentRole)
-                        }
-                    },
-                    enabled = userPrompt.isNotBlank() && !isAiLoading,
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .background(if (userPrompt.isNotBlank() && !isAiLoading) roleThemeColor else Color.Gray.copy(alpha = 0.3f))
-                        .testTag("send_ai_prompt_button")
-                ) {
-                    Icon(
-                        Icons.Rounded.Send,
-                        contentDescription = "Send",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
+            )
         }
 
         // Live Voice Conversation Mode Dialog
@@ -639,7 +627,9 @@ fun RoleAiAssistantScreen(
                 currentRole = currentRole,
                 isAiLoading = isAiLoading,
                 chatHistory = chatHistory,
-                onStartSpeech = { launchVoiceRecognizer() },
+                onStartSpeech = {
+                    audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                },
                 onDismiss = { showLiveVoiceModal = false }
             )
         }
@@ -667,7 +657,7 @@ fun LiveVoiceAssistantModal(
         label = "pulse"
     )
 
-    val rawModelMessage = chatHistory.lastOrNull { it.role == "model" }?.text ?: "I am ready. Tap the microphone and ask your question."
+    val rawModelMessage = chatHistory.lastOrNull { it.role == "model" }?.text ?: "I am ready. Tap the microphone to record a voice note."
     val lastModelMessage = remember(rawModelMessage) { AiTextFormatter.toPlainText(rawModelMessage) }
 
     AlertDialog(
@@ -684,8 +674,8 @@ fun LiveVoiceAssistantModal(
             ) {
                 Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = roleThemeColor)
                 Text(
-                    text = "Live Voice Conversation",
-                    fontSize = 16.sp,
+                    text = "Live Voice Note Conversation",
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -694,13 +684,13 @@ fun LiveVoiceAssistantModal(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
-                    text = "Continuous Live Voice Assistance for $roleTitle",
-                    fontSize = 12.sp,
+                    text = "Instant Voice Notes for $roleTitle",
+                    fontSize = 11.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
@@ -708,13 +698,12 @@ fun LiveVoiceAssistantModal(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(120.dp)
-                        .padding(10.dp)
+                        .size(110.dp)
+                        .padding(8.dp)
                 ) {
-                    // Pulsing animated wave rings
                     Box(
                         modifier = Modifier
-                            .size(100.dp)
+                            .size(90.dp)
                             .scale(if (isAiLoading) waveScale else 1f)
                             .clip(CircleShape)
                             .background(roleThemeColor.copy(alpha = if (isAiLoading) 0.25f else 0.12f))
@@ -722,10 +711,10 @@ fun LiveVoiceAssistantModal(
 
                     Surface(
                         shape = CircleShape,
-                        color = roleThemeColor,
-                        shadowElevation = 6.dp,
+                        color = Color(0xFF25D366),
+                        shadowElevation = 4.dp,
                         modifier = Modifier
-                            .size(68.dp)
+                            .size(62.dp)
                             .clip(CircleShape)
                             .clickable { onStartSpeech() }
                     ) {
@@ -734,30 +723,30 @@ fun LiveVoiceAssistantModal(
                                 imageVector = if (isAiLoading) Icons.Rounded.HourglassTop else Icons.Rounded.Mic,
                                 contentDescription = "Tap to speak",
                                 tint = Color.White,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
                 }
 
                 Text(
-                    text = if (isAiLoading) "Gemini is analyzing & speaking..." else "Tap Microphone to Speak",
-                    fontSize = 13.sp,
+                    text = if (isAiLoading) "Gemini is analyzing & speaking..." else "Tap WhatsApp Mic to Speak",
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isAiLoading) roleThemeColor else MaterialTheme.colorScheme.onSurface
                 )
 
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = lastModelMessage.take(280) + if (lastModelMessage.length > 280) "..." else "",
-                        fontSize = 11.5.sp,
-                        lineHeight = 16.sp,
+                        text = lastModelMessage.take(240) + if (lastModelMessage.length > 240) "..." else "",
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(12.dp)
+                        modifier = Modifier.padding(10.dp)
                     )
                 }
             }
@@ -770,7 +759,9 @@ fun ChatBubbleItem(
     message: GeminiChatMessage,
     roleThemeColor: Color,
     isSpeaking: Boolean = false,
+    playbackSpeed: Float = 1.0f,
     onToggleSpeak: () -> Unit = {},
+    onToggleSpeed: () -> Unit = {},
     onCopy: () -> Unit,
     onOpenUrl: (String) -> Unit
 ) {
@@ -785,7 +776,7 @@ fun ChatBubbleItem(
         if (!isUser) {
             Box(
                 modifier = Modifier
-                    .size(30.dp)
+                    .size(28.dp)
                     .clip(CircleShape)
                     .background(roleThemeColor.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
@@ -794,27 +785,27 @@ fun ChatBubbleItem(
                     Icons.Rounded.AutoAwesome,
                     contentDescription = null,
                     tint = roleThemeColor,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(15.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
         }
 
         Column(
-            modifier = Modifier.widthIn(max = 320.dp),
+            modifier = Modifier.widthIn(max = 300.dp),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
             // Header / Metadata for Model Bubble
             if (!isUser) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(bottom = 3.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.padding(bottom = 2.dp)
                 ) {
                     Text(
                         text = "Gemini AI",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
+                        fontSize = 10.5.sp,
                         color = roleThemeColor
                     )
 
@@ -825,7 +816,7 @@ fun ChatBubbleItem(
                         ) {
                             Text(
                                 text = message.modelUsed.replace("-preview", ""),
-                                fontSize = 9.sp,
+                                fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
@@ -843,10 +834,10 @@ fun ChatBubbleItem(
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                             ) {
-                                Icon(Icons.Rounded.TravelExplore, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(10.dp))
+                                Icon(Icons.Rounded.TravelExplore, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(9.dp))
                                 Text(
                                     text = "Search Grounded",
-                                    fontSize = 8.5.sp,
+                                    fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF15803D)
                                 )
@@ -859,17 +850,17 @@ fun ChatBubbleItem(
             // Bubble body
             Surface(
                 shape = RoundedCornerShape(
-                    topStart = 16.dp,
-                    topEnd = 16.dp,
-                    bottomStart = if (isUser) 16.dp else 4.dp,
-                    bottomEnd = if (isUser) 4.dp else 16.dp
+                    topStart = 14.dp,
+                    topEnd = 14.dp,
+                    bottomStart = if (isUser) 14.dp else 3.dp,
+                    bottomEnd = if (isUser) 3.dp else 14.dp
                 ),
                 color = if (isUser) roleThemeColor else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                 border = if (!isUser) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)) else null
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     SelectionContainer {
                         val displayContent = remember(message.text) { 
@@ -877,8 +868,8 @@ fun ChatBubbleItem(
                         }
                         Text(
                             text = displayContent,
-                            fontSize = 13.sp,
-                            lineHeight = 19.sp,
+                            fontSize = 12.5.sp,
+                            lineHeight = 17.sp,
                             color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -886,21 +877,21 @@ fun ChatBubbleItem(
                     // Search Grounding Citations / Web References
                     if (!isUser && message.searchSources.isNotEmpty()) {
                         HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 4.dp),
+                            modifier = Modifier.padding(vertical = 3.dp),
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                         )
 
                         Text(
                             text = "🌐 Verified Web Sources & Citations:",
-                            fontSize = 10.5.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF15803D)
                         )
 
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             message.searchSources.take(3).forEach { source ->
                                 Surface(
-                                    shape = RoundedCornerShape(6.dp),
+                                    shape = RoundedCornerShape(5.dp),
                                     color = Color.White,
                                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF16A34A).copy(alpha = 0.25f)),
                                     modifier = Modifier
@@ -908,19 +899,19 @@ fun ChatBubbleItem(
                                         .clickable { onOpenUrl(source.url) }
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         Icon(
                                             Icons.Rounded.OpenInNew,
                                             contentDescription = null,
                                             tint = Color(0xFF15803D),
-                                            modifier = Modifier.size(12.dp)
+                                            modifier = Modifier.size(11.dp)
                                         )
                                         Text(
                                             text = source.title.ifBlank { source.url },
-                                            fontSize = 10.5.sp,
+                                            fontSize = 9.5.sp,
                                             fontWeight = FontWeight.Medium,
                                             color = Color(0xFF1E3A8A),
                                             maxLines = 1
@@ -939,35 +930,66 @@ fun ChatBubbleItem(
                     ) {
                         Text(
                             text = formattedTime,
-                            fontSize = 9.5.sp,
+                            fontSize = 9.sp,
                             color = if (isUser) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
 
                         if (!isUser) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                // Text-to-Speech narration button
-                                IconButton(
-                                    onClick = onToggleSpeak,
-                                    modifier = Modifier.size(24.dp)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // WhatsApp-style Voice Play / Pause narration button
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isSpeaking) roleThemeColor.copy(alpha = 0.15f) else Color.Transparent,
+                                    modifier = Modifier.clickable { onToggleSpeak() }
                                 ) {
-                                    Icon(
-                                        imageVector = if (isSpeaking) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
-                                        contentDescription = if (isSpeaking) "Stop speaking" else "Read aloud",
-                                        tint = if (isSpeaking) roleThemeColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(14.dp)
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isSpeaking) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+                                            contentDescription = if (isSpeaking) "Stop speaking" else "Read aloud",
+                                            tint = if (isSpeaking) roleThemeColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Text(
+                                            text = if (isSpeaking) "Stop" else "Listen",
+                                            fontSize = 9.sp,
+                                            color = if (isSpeaking) roleThemeColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                // Speed toggle
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.clickable { onToggleSpeed() }
+                                ) {
+                                    Text(
+                                        text = "${playbackSpeed}x",
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
                                     )
                                 }
 
                                 // Copy button
                                 IconButton(
                                     onClick = onCopy,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(20.dp)
                                 ) {
                                     Icon(
                                         Icons.Rounded.ContentCopy,
                                         contentDescription = "Copy text",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(13.dp)
+                                        modifier = Modifier.size(12.dp)
                                     )
                                 }
                             }
@@ -991,7 +1013,7 @@ fun ThinkingBubbleItem(
     ) {
         Box(
             modifier = Modifier
-                .size(30.dp)
+                .size(28.dp)
                 .clip(CircleShape)
                 .background(roleThemeColor.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
@@ -1000,29 +1022,29 @@ fun ThinkingBubbleItem(
                 Icons.Rounded.AutoAwesome,
                 contentDescription = null,
                 tint = roleThemeColor,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(15.dp)
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
 
         Surface(
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(14.dp),
                     color = roleThemeColor,
                     strokeWidth = 2.dp
                 )
                 Text(
-                    text = if (isSearchGrounded) "Gemini is searching Google & generating response..." else "Gemini is thinking...",
-                    fontSize = 12.sp,
+                    text = if (isSearchGrounded) "Gemini is searching Google & analyzing..." else "Gemini is thinking...",
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

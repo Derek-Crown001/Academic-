@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
         CbtExam::class,
         CbtQuestion::class,
         CbtSubmission::class,
+        CbtActiveSessionCache::class,
         SchoolAssignment::class,
         AssignmentSubmission::class,
         StudentGrade::class,
@@ -30,7 +31,7 @@ import kotlinx.coroutines.CoroutineScope
         AppOwnerPaymentClaim::class,
         AppOwnerLicenseKey::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class SchoolDatabase : RoomDatabase() {
