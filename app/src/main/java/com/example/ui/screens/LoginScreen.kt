@@ -255,77 +255,6 @@ fun LoginScreen(
                     }
                 }
 
-                // Standalone App Owner Master Console Card
-                item {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFFD97706)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.Security,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                Column {
-                                    Text(
-                                        text = "Platform Owner Master App",
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        fontSize = 12.5.sp
-                                    )
-                                    Text(
-                                        text = "Remote School Locking & SaaS Controls",
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 10.5.sp
-                                    )
-                                }
-                            }
-
-                            Button(
-                                onClick = {
-                                    try {
-                                        val intent = Intent(context, OwnerConsoleActivity::class.java)
-                                        context.startActivity(intent)
-                                    } catch (e: Exception) {
-                                        viewModel.selectPortal(SchoolRole.APP_OWNER)
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                modifier = Modifier.testTag("launch_owner_app_from_login_btn")
-                            ) {
-                                Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Open Owner App", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-
                 // Error Message Banner
                 if (authError != null) {
                     item {
@@ -388,11 +317,10 @@ fun LoginScreen(
                             ) {
                                 Text(
                                     text = when (selectedRole) {
-                                        SchoolRole.APP_OWNER -> "App Owner Platform Console"
                                         SchoolRole.ADMIN -> if (isAdminRegisterMode) "Register New School & Admin" else "School Administrator Login"
                                         SchoolRole.TEACHER -> "Teacher Portal Access"
                                         SchoolRole.STUDENT -> "Student Portal Access"
-                                        SchoolRole.PARENT -> "Parent / Guardian Access"
+                                        SchoolRole.PARENT, SchoolRole.APP_OWNER -> "Parent / Guardian Access"
                                     },
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
@@ -423,11 +351,10 @@ fun LoginScreen(
                             ) {
                                 Text(
                                     text = when (selectedRole) {
-                                        SchoolRole.APP_OWNER -> "Master Super-Admin Access. Controls remote feature locks, payment claims, school billing memos, and license key generation."
                                         SchoolRole.ADMIN -> if (isAdminRegisterMode) "Set up a clean, isolated database for your school. You will receive a School Passkey for your teachers and students." else "Sign in with your School Passkey and Admin credentials."
                                         SchoolRole.TEACHER -> "Enter your School Passkey provided by your Admin, followed by your staff email/ID and security PIN."
                                         SchoolRole.STUDENT -> "Enter your School Passkey, Student Admission Number, and your PIN."
-                                        SchoolRole.PARENT -> "Enter your School Passkey, your child's Admission Number, and your phone or PIN to monitor grades and reports."
+                                        SchoolRole.PARENT, SchoolRole.APP_OWNER -> "Enter your School Passkey, your child's Admission Number, and your phone or PIN to monitor grades and reports."
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface,
@@ -541,11 +468,10 @@ fun LoginScreen(
                                 label = {
                                     Text(
                                         when (selectedRole) {
-                                            SchoolRole.APP_OWNER -> "Master Owner PIN (9999)"
                                             SchoolRole.ADMIN -> "Admin Password"
                                             SchoolRole.TEACHER -> "Teacher Passcode / PIN (e.g. teach123)"
                                             SchoolRole.STUDENT -> "Student Passcode / PIN (e.g. 1234)"
-                                            SchoolRole.PARENT -> "Security PIN (e.g. 1234)"
+                                            SchoolRole.PARENT, SchoolRole.APP_OWNER -> "Security PIN (e.g. 1234)"
                                         }
                                     )
                                 },
@@ -626,11 +552,10 @@ fun LoginScreen(
                                     ) {
                                         Text(
                                             text = when (selectedRole) {
-                                                SchoolRole.APP_OWNER -> "Enter App Owner Console"
                                                 SchoolRole.ADMIN -> if (isAdminRegisterMode) "Register School & Enter Admin Portal" else "Enter Admin Portal"
                                                 SchoolRole.TEACHER -> "Enter Teacher Portal"
                                                 SchoolRole.STUDENT -> "Enter Student Portal"
-                                                SchoolRole.PARENT -> "Enter Parent Portal"
+                                                SchoolRole.PARENT, SchoolRole.APP_OWNER -> "Enter Parent Portal"
                                             },
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 14.5.sp

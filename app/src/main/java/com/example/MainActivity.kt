@@ -182,47 +182,6 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                     }
                 },
                 actions = {
-                    // Quick Master App / School App Switcher
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (currentRole == SchoolRole.APP_OWNER) Color(0xFF2563EB).copy(alpha = 0.15f) else Color(0xFFD97706).copy(alpha = 0.15f),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (currentRole == SchoolRole.APP_OWNER) Color(0xFF3B82F6) else Color(0xFFF59E0B)
-                        ),
-                        modifier = Modifier
-                            .clickable {
-                                if (currentRole == SchoolRole.APP_OWNER) {
-                                    viewModel.selectPortal(SchoolRole.ADMIN)
-                                } else {
-                                    pendingRoleForPin = SchoolRole.APP_OWNER
-                                    pendingUserForPin = allUsers.find { it.role == SchoolRole.APP_OWNER }
-                                }
-                            }
-                            .testTag(if (currentRole == SchoolRole.APP_OWNER) "switch_to_school_app_btn" else "launch_owner_app_btn")
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (currentRole == SchoolRole.APP_OWNER) Icons.Rounded.School else Icons.Rounded.Security,
-                                contentDescription = null,
-                                tint = if (currentRole == SchoolRole.APP_OWNER) Color(0xFF2563EB) else Color(0xFFD97706),
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Text(
-                                text = if (currentRole == SchoolRole.APP_OWNER) "School App" else "Owner App",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (currentRole == SchoolRole.APP_OWNER) Color(0xFF2563EB) else Color(0xFFD97706)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
                     // Profile Photo Avatar
                     UserAvatar(
                         user = currentUser,
@@ -323,7 +282,7 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Access is strictly partitioned. App Owner has master control & locking, Admins & Teachers have management corners, while Students & Parents have learning portals.",
+                        text = "Access is partitioned by institutional role: Principal / Administrator, Teacher Faculty, Enrolled Student, and Parent / Guardian.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -407,80 +366,6 @@ fun SchoolManagementMainContent(viewModel: SchoolViewModel) {
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
-
-                    // Dedicated Standalone App Owner Controller Card
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color(0xFF1E293B),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD97706)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showRoleSwitchDialog = false
-                                val ownerIntent = Intent(context, com.example.owner.OwnerMainActivity::class.java)
-                                context.startActivity(ownerIntent)
-                            }
-                            .testTag("launch_standalone_owner_from_dialog")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFD97706)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Security,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Text(
-                                        text = "Platform Owner Master App",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = Color.White
-                                    )
-                                    Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = Color(0xFFD97706).copy(alpha = 0.3f)
-                                    ) {
-                                        Text(
-                                            text = "STANDALONE",
-                                            fontSize = 8.5.sp,
-                                            fontWeight = FontWeight.Black,
-                                            color = Color(0xFFFBBF24),
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = "Remote School Locking, Key Vault & SaaS Controls",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                            Icon(
-                                Icons.Rounded.OpenInNew,
-                                contentDescription = "Launch",
-                                tint = Color(0xFFFBBF24),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
 
                     // Sign Out Button from dialog
                     OutlinedButton(
