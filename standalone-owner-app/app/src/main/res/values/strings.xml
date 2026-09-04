@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">AcademiaTrack Owner Master</string>
+    <string name="owner_master_label">Owner Master Console</string>
+    <string name="owner_sync_service_description">Platform Owner Remote Access &amp; Cloud Telemetry Service</string>
+</resources>

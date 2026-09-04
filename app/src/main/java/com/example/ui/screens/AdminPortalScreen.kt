@@ -246,57 +246,109 @@ fun AdminPortalScreen(
                 )
             }
             PortalTab.CLASSES -> {
-                AdminClassManagementContent(
-                    classes = allClasses,
-                    teachers = allTeachers,
-                    students = allStudents,
-                    onAddClass = { name, level, arm, teacherId, teacherName, capacity, room ->
-                        viewModel.addClass(name, level, arm, teacherId, teacherName, capacity, room)
-                    },
-                    onUpdateClass = { updatedClass ->
-                        viewModel.updateClass(updatedClass)
-                    },
-                    onDeleteClass = { cls ->
-                        viewModel.deleteClass(cls)
+                val (isLocked, reason) = viewModel.isFeatureLocked("STUDENT_MGMT")
+                if (isLocked) {
+                    Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                        LockedFeaturePaywallCard(
+                            featureName = "Class & Student Administration",
+                            lockReason = reason,
+                            config = licenseConfig,
+                            onRedeemKeyClick = { showRedeemKeyDialog = true },
+                            onSubmitProofClick = { showSubmitProofDialog = true }
+                        )
                     }
-                )
+                } else {
+                    AdminClassManagementContent(
+                        classes = allClasses,
+                        teachers = allTeachers,
+                        students = allStudents,
+                        onAddClass = { name, level, arm, teacherId, teacherName, capacity, room ->
+                            viewModel.addClass(name, level, arm, teacherId, teacherName, capacity, room)
+                        },
+                        onUpdateClass = { updatedClass ->
+                            viewModel.updateClass(updatedClass)
+                        },
+                        onDeleteClass = { cls ->
+                            viewModel.deleteClass(cls)
+                        }
+                    )
+                }
             }
             PortalTab.STAFF_ATTENDANCE -> {
-                AdminStaffAttendanceContent(
-                    attendances = allTeacherAttendance,
-                    teachers = allTeachers,
-                    onRegisterTeacher = { name, staffId, email, passcode, assignedClass, assignedSubjects, phone, qualification, gender ->
-                        viewModel.registerTeacher(
-                            name = name,
-                            staffId = staffId,
-                            email = email,
-                            passcode = passcode,
-                            assignedClass = assignedClass,
-                            assignedSubjects = assignedSubjects,
-                            phone = phone,
-                            qualification = qualification,
-                            gender = gender
+                val (isLocked, reason) = viewModel.isFeatureLocked("ATTENDANCE")
+                if (isLocked) {
+                    Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                        LockedFeaturePaywallCard(
+                            featureName = "Staff Clock-in & Attendance Plugin",
+                            lockReason = reason,
+                            config = licenseConfig,
+                            onRedeemKeyClick = { showRedeemKeyDialog = true },
+                            onSubmitProofClick = { showSubmitProofDialog = true }
                         )
-                    },
-                    onDeleteTeacher = { teacher ->
-                        viewModel.deleteTeacherProfile(teacher)
                     }
-                )
+                } else {
+                    AdminStaffAttendanceContent(
+                        attendances = allTeacherAttendance,
+                        teachers = allTeachers,
+                        onRegisterTeacher = { name, staffId, email, passcode, assignedClass, assignedSubjects, phone, qualification, gender ->
+                            viewModel.registerTeacher(
+                                name = name,
+                                staffId = staffId,
+                                email = email,
+                                passcode = passcode,
+                                assignedClass = assignedClass,
+                                assignedSubjects = assignedSubjects,
+                                phone = phone,
+                                qualification = qualification,
+                                gender = gender
+                            )
+                        },
+                        onDeleteTeacher = { teacher ->
+                            viewModel.deleteTeacherProfile(teacher)
+                        }
+                    )
+                }
             }
             PortalTab.REPORT_CARDS -> {
-                AdminReportCardsApprovalContent(
-                    reportCards = allReportCards,
-                    onApproveReportCard = { id, approved -> viewModel.approveReportCard(id, approved) },
-                    onBulkApproveClass = { className -> viewModel.bulkApproveClassReportCards(className) },
-                    onExportPdf = { rc -> viewModel.exportReportCardPdf(context = context, reportCard = rc) }
-                )
+                val (isLocked, reason) = viewModel.isFeatureLocked("REPORT_CARD")
+                if (isLocked) {
+                    Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                        LockedFeaturePaywallCard(
+                            featureName = "Report Card Compilation & PDF Engine",
+                            lockReason = reason,
+                            config = licenseConfig,
+                            onRedeemKeyClick = { showRedeemKeyDialog = true },
+                            onSubmitProofClick = { showSubmitProofDialog = true }
+                        )
+                    }
+                } else {
+                    AdminReportCardsApprovalContent(
+                        reportCards = allReportCards,
+                        onApproveReportCard = { id, approved -> viewModel.approveReportCard(id, approved) },
+                        onBulkApproveClass = { className -> viewModel.bulkApproveClassReportCards(className) },
+                        onExportPdf = { rc -> viewModel.exportReportCardPdf(context = context, reportCard = rc) }
+                    )
+                }
             }
             PortalTab.ADMIN_AI_ASSISTANT -> {
-                RoleAiAssistantScreen(
-                    viewModel = viewModel,
-                    currentUser = currentUser,
-                    currentRole = SchoolRole.ADMIN
-                )
+                val (isLocked, reason) = viewModel.isFeatureLocked("AI")
+                if (isLocked) {
+                    Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                        LockedFeaturePaywallCard(
+                            featureName = "Gemini AI Administrator Assistant",
+                            lockReason = reason,
+                            config = licenseConfig,
+                            onRedeemKeyClick = { showRedeemKeyDialog = true },
+                            onSubmitProofClick = { showSubmitProofDialog = true }
+                        )
+                    }
+                } else {
+                    RoleAiAssistantScreen(
+                        viewModel = viewModel,
+                        currentUser = currentUser,
+                        currentRole = SchoolRole.ADMIN
+                    )
+                }
             }
             PortalTab.SCHOOL_SETTINGS -> {
                 AdminSchoolSettingsContent(
@@ -319,7 +371,20 @@ fun AdminPortalScreen(
                 )
             }
             PortalTab.STAFF_CHAT, PortalTab.CLASS_CHAT_MODERATION -> {
-                ChatRoomScreen(viewModel = viewModel)
+                val (isLocked, reason) = viewModel.isFeatureLocked("CHAT")
+                if (isLocked) {
+                    Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                        LockedFeaturePaywallCard(
+                            featureName = "Staff & Class Chat Rooms",
+                            lockReason = reason,
+                            config = licenseConfig,
+                            onRedeemKeyClick = { showRedeemKeyDialog = true },
+                            onSubmitProofClick = { showSubmitProofDialog = true }
+                        )
+                    }
+                } else {
+                    ChatRoomScreen(viewModel = viewModel)
+                }
             }
             else -> {}
         }

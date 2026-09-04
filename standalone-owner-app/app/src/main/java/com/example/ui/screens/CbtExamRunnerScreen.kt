@@ -27,6 +27,7 @@ import com.example.data.model.CbtQuestion
 import com.example.ui.components.CbtAdaptiveProgressIndicator
 import com.example.ui.components.CbtAutoSubmitNoticeBanner
 import com.example.ui.components.CbtCountdownTimer
+import com.example.ui.components.LockedFeaturePaywallCard
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.CbtRunnerState
 import com.example.ui.viewmodel.SchoolViewModel
@@ -38,6 +39,29 @@ fun CbtExamRunnerScreen(
     viewModel: SchoolViewModel,
     modifier: Modifier = Modifier
 ) {
+    val (isCbtLocked, cbtLockReason) = viewModel.isFeatureLocked("CBT")
+    if (isCbtLocked) {
+        val licenseConfig by viewModel.licenseConfig.collectAsState()
+        Box(modifier = modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                LockedFeaturePaywallCard(
+                    featureName = "CBT Examination Engine",
+                    lockReason = cbtLockReason,
+                    config = licenseConfig,
+                    onRedeemKeyClick = { },
+                    onSubmitProofClick = { }
+                )
+                Button(onClick = { viewModel.exitCbtRunner() }) {
+                    Text("Return to Portal")
+                }
+            }
+        }
+        return
+    }
+
     val runnerState by viewModel.cbtRunnerState.collectAsState()
     var showSubmitDialog by remember { mutableStateOf(false) }
 
