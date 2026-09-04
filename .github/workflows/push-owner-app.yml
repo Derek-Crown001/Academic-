@@ -1,0 +1,128 @@
+name: Push Owner App to Separate Repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'Target GitHub Repository (e.g., derekcrown001/AcademiaTrack-Owner)'
+        required: true
+        default: 'derekcrown001/AcademiaTrack-Owner'
+      target_branch:
+        description: 'Branch name in the target repository'
+        required: true
+        default: 'main'
+      force_push:
+        description: 'Force push to target branch'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  export-and-push:
+    name: Export & Push Owner Master App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Monorepo
+        uses: actions/checkout@v4
+
+      - name: Set up Git Configuration
+        run: |
+          git config --global user.name "AcademiaTrack Automation"
+          git config --global user.email "bot@academiatrack.app"
+
+      - name: Assemble Standalone Owner App
+        id: assemble
+        run: |
+          echo "=== Assembling Standalone Owner Master Project ==="
+          EXPORT_DIR="${RUNNER_TEMP}/standalone-owner-app"
+          bash scripts/push-owner-repo.sh --export-only "${EXPORT_DIR}"
+          
+          if [ ! -f "${EXPORT_DIR}/app/build.gradle.kts" ] || [ ! -f "${EXPORT_DIR}/settings.gradle.kts" ]; then
+            echo "ERROR: Standalone project assembly failed."
+            exit 1
+          fi
+          
+          echo "export_dir=${EXPORT_DIR}" >> "$GITHUB_OUTPUT"
+          echo "Assembly complete at: ${EXPORT_DIR}"
+
+      - name: Create Standalone ZIP Archive
+        run: |
+          echo "=== Packaging ZIP Archive ==="
+          cd "${RUNNER_TEMP}/standalone-owner-app"
+          zip -r "${RUNNER_TEMP}/AcademiaTrack-Owner-Master-Standalone.zip" .
+          echo "ZIP created successfully."
+
+      - name: Upload Standalone Project Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AcademiaTrack-Owner-Master-Standalone-Project
+          path: ${{ runner.temp }}/AcademiaTrack-Owner-Master-Standalone.zip
+          retention-days: 30
+
+      - name: Push to Target GitHub Repository
+        id: push_step
+        env:
+          TARGET_REPO: ${{ github.event.inputs.target_repo }}
+          TARGET_BRANCH: ${{ github.event.inputs.target_branch }}
+          FORCE_PUSH: ${{ github.event.inputs.force_push }}
+          PAT_TOKEN: ${{ secrets.OWNER_REPO_PAT || secrets.GH_PAT || secrets.PAT || github.token }}
+        run: |
+          echo "=== Pushing to Target Repository: ${TARGET_REPO} ==="
+          cd "${RUNNER_TEMP}/standalone-owner-app"
+
+          git init
+          git checkout -b "${TARGET_BRANCH}"
+          git add .
+          git commit -m "feat(owner): standalone AcademiaTrack Owner Master App deployment"
+
+          # Configure authenticated remote URL
+          REMOTE_URL="https://x-access-token:${PAT_TOKEN}@github.com/${TARGET_REPO}.git"
+          git remote add origin "${REMOTE_URL}"
+
+          PUSH_FLAGS="-u origin ${TARGET_BRANCH}"
+          if [ "${FORCE_PUSH}" = "true" ]; then
+            PUSH_FLAGS="${PUSH_FLAGS} --force"
+          fi
+
+          echo "Attempting to push to https://github.com/${TARGET_REPO} on branch ${TARGET_BRANCH}..."
+          if git push ${PUSH_FLAGS}; then
+            echo "PUSH_STATUS=success" >> "$GITHUB_ENV"
+            echo "Successfully pushed to separate repository!"
+          else
+            echo "PUSH_STATUS=failed" >> "$GITHUB_ENV"
+            echo "::warning::Direct push to target repository failed. Please ensure OWNER_REPO_PAT secret is configured with repo access."
+          fi
+
+      - name: Publish Workflow Summary
+        if: always()
+        run: |
+          echo "### 🚀 Standalone Owner App Push Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Target Repository**: [\`${{ github.event.inputs.target_repo }}\`](https://github.com/${{ github.event.inputs.target_repo }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Target Branch**: \`${{ github.event.inputs.target_branch }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Source Monorepo Commit**: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${PUSH_STATUS}" = "success" ]; then
+            echo "#### ✅ Direct Push Succeeded!" >> "$GITHUB_STEP_SUMMARY"
+            echo "The standalone Platform Owner Master application has been successfully synchronized to https://github.com/${{ github.event.inputs.target_repo }}." >> "$GITHUB_STEP_SUMMARY"
+            echo "Your new repository will now automatically trigger its own GitHub Actions build to publish \`AcademiaTrack-Owner-Master.apk\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "#### ⚠️ Authentication Notice for Cross-Repository Push" >> "$GITHUB_STEP_SUMMARY"
+            echo "To allow this repository to push directly to **\`${{ github.event.inputs.target_repo }}\`**, configure a GitHub Personal Access Token (PAT):" >> "$GITHUB_STEP_SUMMARY"
+            echo "1. Go to **GitHub Settings** -> **Developer Settings** -> **Personal Access Tokens** -> **Generate new token (classic)**." >> "$GITHUB_STEP_SUMMARY"
+            echo "2. Select scope **\`repo\`** (Full control of private and public repositories)." >> "$GITHUB_STEP_SUMMARY"
+            echo "3. In this repository, go to **Settings** -> **Secrets and variables** -> **Actions** -> **New repository secret**." >> "$GITHUB_STEP_SUMMARY"
+            echo "4. Name the secret **\`OWNER_REPO_PAT\`** and paste your token." >> "$GITHUB_STEP_SUMMARY"
+            echo "5. Re-run this workflow!" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "#### 📦 Immediate Download Alternative" >> "$GITHUB_STEP_SUMMARY"
+            echo "The standalone project has been packaged and uploaded as an artifact: **\`AcademiaTrack-Owner-Master-Standalone-Project\`** on this workflow run. You can download and push it immediately using:" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
+            echo "bash scripts/push-owner-repo.sh https://github.com/${{ github.event.inputs.target_repo }}.git" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          fi

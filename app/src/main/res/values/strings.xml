@@ -1,5 +1,3 @@
 <resources>
     <string name="app_name">AcademiaTrack</string>
-    <string name="owner_sync_service_description">AcademiaTrack Multi-Tenant Remote Access Control &amp; Firestore Synchronization Service</string>
-    <string name="owner_master_label">AcademiaTrack Owner Master</string>
 </resources>

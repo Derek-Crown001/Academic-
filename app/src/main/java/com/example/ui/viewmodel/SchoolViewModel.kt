@@ -60,10 +60,7 @@ enum class PortalTab {
     PARENT_REPORT_CARD,
     PARENT_ANNOUNCEMENTS,
     PARENT_AI_ASSISTANT,
-    PARENT_CONTACT,
-
-    // App Owner Master Control
-    APP_OWNER_CONSOLE
+    PARENT_CONTACT
 }
 
 data class CbtRunnerState(
@@ -185,7 +182,7 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         _currentRole
     ) { announcements, role ->
         when (role) {
-            SchoolRole.ADMIN, SchoolRole.APP_OWNER -> announcements // Admin and App Owner see everything
+            SchoolRole.ADMIN -> announcements // Admin sees everything
             SchoolRole.TEACHER -> announcements.filter { it.targetAudience == "TEACHER" || it.targetAudience == "ALL" }
             SchoolRole.STUDENT -> announcements.filter { it.targetAudience == "STUDENT" || it.targetAudience == "ALL" }
             SchoolRole.PARENT -> announcements.filter { it.targetAudience == "PARENT" || it.targetAudience == "ALL" }
@@ -410,9 +407,8 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
         _securityError.value = null
 
         // Security check: Secured management roles require valid PIN
-        if (role == SchoolRole.ADMIN || role == SchoolRole.TEACHER || role == SchoolRole.APP_OWNER) {
+        if (role == SchoolRole.ADMIN || role == SchoolRole.TEACHER) {
             val requiredPin = when (role) {
-                SchoolRole.APP_OWNER -> "9999"
                 SchoolRole.ADMIN -> "admin123"
                 SchoolRole.TEACHER -> "teach123"
                 else -> "1234"
@@ -420,28 +416,18 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
             val isValidPin = (pin != null) && (
                 pin == requiredPin || 
-                pin == "9999" || 
-                pin == "owner123" || 
                 pin == "1234" || 
                 pin == (user?.passcode ?: "")
             )
 
             if (!isValidPin) {
-                _securityError.value = "Incorrect PIN! Access denied to ${if (role == SchoolRole.APP_OWNER) "App Owner Master Console" else "${role.name} Corner"}."
+                _securityError.value = "Incorrect PIN! Access denied to ${role.name} Corner."
                 return false
             }
         }
 
         // Set Target User
         val selectedUser = user ?: when (role) {
-            SchoolRole.APP_OWNER -> SchoolUser(
-                id = "APP-OWNER-MASTER",
-                name = "App Platform Owner",
-                role = SchoolRole.APP_OWNER,
-                email = "owner@acadamiatrack.io",
-                passcode = "9999",
-                avatarColorHex = "#D97706"
-            )
             SchoolRole.ADMIN -> allUsers.value.find { it.role == SchoolRole.ADMIN }
             SchoolRole.TEACHER -> allUsers.value.find { it.role == SchoolRole.TEACHER }
             SchoolRole.STUDENT -> allUsers.value.find { it.role == SchoolRole.STUDENT }
@@ -453,7 +439,6 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
         // Set default tab for the newly selected portal
         _currentTab.value = when (role) {
-            SchoolRole.APP_OWNER -> PortalTab.APP_OWNER_CONSOLE
             SchoolRole.ADMIN -> PortalTab.DASHBOARD
             SchoolRole.TEACHER -> PortalTab.TEACHER_DASHBOARD
             SchoolRole.STUDENT -> PortalTab.STUDENT_CBT
@@ -462,7 +447,6 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
         // Update default chat channel
         _activeChatChannelId.value = when (role) {
-            SchoolRole.APP_OWNER -> "STAFF_GENERAL"
             SchoolRole.ADMIN, SchoolRole.TEACHER -> "STAFF_GENERAL"
             SchoolRole.STUDENT -> "CLASS_SS2_GOLD"
             SchoolRole.PARENT -> "CLASS_SS2_GOLD"
@@ -1605,7 +1589,6 @@ class SchoolViewModel(application: Application) : AndroidViewModel(application) 
 
         val channelName = currentRoom?.title ?: "School Room"
         val avatarColor = when (user.role) {
-            SchoolRole.APP_OWNER -> "#D97706"
             SchoolRole.ADMIN -> "#1E3A8A"
             SchoolRole.TEACHER -> "#0F766E"
             SchoolRole.STUDENT -> "#2563EB"
